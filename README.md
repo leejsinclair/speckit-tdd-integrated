@@ -112,6 +112,10 @@ These are limits of the first release. None is presented as covered.
   casual edit. It does not resist an agent that recomputes it.
 - **Full enforcement is on Claude Code only.** Other agents get the rules and the checks,
   and no hard stop until a payload adapter is added for them.
+- **A composed command can keep the wrapper after removal.** When another preset wraps the
+  same command, Spec Kit stores its composed text and does not recompose it when this
+  preset is removed. The leftover note says to carry on as core Spec Kit when the check
+  script is absent, so it is inert. Removing and re-adding the other preset refreshes it.
 - **Windows is untested.**
 - **No bundle.** The two packages are installed by two commands.
 

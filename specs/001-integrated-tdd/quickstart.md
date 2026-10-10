@@ -234,3 +234,35 @@ refusal.
 | Write the test, then `run --phase red` on the test task `T002` with the expected failure text | Recorded as a valid failing-first record | `recorded #2: red unit-one: fail, valid`. `gate --task T002` passed; `gate --task T003` failed on G4 only | Yes |
 | Implement, then `run --phase green` on `T003` | Recorded, valid; the gate passes | `recorded #3: green unit-one: pass, valid`; `gate T003: passed` | Yes |
 | Mark `T002` and `T003` complete with Edit | Both succeed | Both succeeded | Yes |
+
+### User Story 6: installation and coexistence, scenarios 2 and 5 (T075, 2026-10-10)
+
+Run in fresh projects, with both packages installed from a tree made by `git archive HEAD`
+(a release archive), so only shipped files were copied. `c4` and `c4-model` were installed
+first in `projA`.
+
+| Expected outcome | Observed | Met |
+|------------------|----------|-----|
+| Both packages listed as installed and enabled, beside `c4` and `c4-model` | Listed, all enabled | Yes |
+| The release tree installs only shipped files | `.specify/extensions/integrated-tdd/` held `CHANGELOG.md`, `commands`, `extension.yml`, `LICENSE`, `README.md`, `scripts`, `templates`; the preset directory held `preset`, `preset.yml`, the same documents, and Spec Kit's own `.composed` | Yes. No `.git`, `.specify`, `.claude` or `specs` |
+| The skill list is unchanged | Identical to the listing before our install | Yes |
+| `.claude/settings.json` gains one `PreToolUse` entry and nothing else changes | One new entry, matcher `Edit\|Write\|MultiEdit`; every other setting equal | Yes |
+| `plan-template` ends with the Verification Plan and keeps the `c4-model` Architecture section | Both present | Yes |
+| The composed plan command holds both presets' text and the core command once, in either priority order | Equal priority and priority 20: core, then `integrated-tdd`, then `c4-model`. Priority 5: core, then `c4-model`, then `integrated-tdd`. In each: our note and our section once, the `c4-model` note and section once, one `## Outline`, no `{CORE_TEMPLATE}` | Yes |
+| `/speckit-plan` with both produces `architecture.md` and the Verification Plan | `architecture.md` (4 diagrams) and a plan with 9 obligations; `tdd_check.py plan` exited 0 | Yes |
+| Preset installed with the extension absent: `/speckit-plan` says the extension is missing and completes as core Spec Kit would | The plan was written and the report said the extension is not installed and the check was not run | Yes |
+| Feature planned without a Verification Plan, both packages installed: `/speckit-tasks` and `/speckit-implement` state the gap, name `/speckit-plan`, complete as core, do not call the work verified | Both completed as core. Each report stated the gap, named `/speckit-plan`, and said the work was not verified. No labels, no check run, no `tdd-evidence.md`. The start-of-stage statement is not visible in `claude -p` output, which returns the final message only | Yes for the report; the start statement is not observed |
+| Removal: `specify preset remove`, then `specify extension remove` | Both removed. Skill list as before. Feature directory untouched. `speckit.implement` resolves to the core command. The `PreToolUse` entry went with the extension | Yes |
+
+Two differences from the expected outcomes, recorded rather than fixed here:
+
+- **`/speckit-plan` after removal still carries our note.** With `c4-model` left installed,
+  its stored composed command (`.specify/presets/c4-model/.composed/speckit.plan.md`)
+  already held our wrapper, and Spec Kit did not recompose it when our preset was removed.
+  `preset set-priority`, `disable` and `enable` did not refresh it either. Removing and
+  re-adding `c4-model` did. The stale note is harmless: it tells the agent to continue as
+  core Spec Kit when the check script is absent, which it now is, and the composed skill
+  held no other trace of ours. It is recorded as a known limit in the README.
+- **`.claude/settings.json` was absent after removal** in `projA` because the project had
+  none before the extension was added. Spec Kit removed the file it had created; nothing of
+  the developer's changed.
