@@ -1,0 +1,10 @@
+# Kept out of the extension install: the preset, and development and project files.
+preset/
+preset.yml
+tests/
+examples/
+docs/
+specs/
+stories/
+.specify/
+.claude/
