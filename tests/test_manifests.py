@@ -135,5 +135,105 @@ class ProcessRulesTests(unittest.TestCase):
             self.assertNotIn(name, text)
 
 
+RULES_PATH = ".specify/extensions/integrated-tdd/templates/tdd-process-rules.md"
+SCRIPT_PATH = ".specify/extensions/integrated-tdd/scripts/python/tdd_check.py"
+# Names no wrapper or addendum may require of a project: test frameworks, CI systems, linters.
+TOOL_NAMES = [
+    "pytest", "unittest", "jest", "vitest", "mocha", "junit", "rspec", "phpunit", "go test", "cargo test",
+    "github actions", "gitlab", "jenkins", "circleci", "eslint", "ruff", "flake8", "pylint", "rubocop",
+]  # fmt: skip
+
+
+def wrapper_parts(stage):
+    text = read_repo("preset", "commands", f"speckit.{stage}.md")
+    above, _token, below = text.partition("{CORE_TEMPLATE}")
+    return text, above, below
+
+
+class WrapperRules:
+    """Rules every wrapper meets. Mixed into a TestCase that sets ``stage`` and ``subcommands``."""
+
+    stage = None
+    subcommands = ()
+    handles_missing_plan = True
+
+    def test_wrapper_names_the_rules_file_in_full(self):
+        _text, above, _below = wrapper_parts(self.stage)
+        self.assertIn(RULES_PATH, above)
+
+    def test_wrapper_begins_with_the_missing_extension_check(self):
+        _text, above, _below = wrapper_parts(self.stage)
+        self.assertIn(SCRIPT_PATH, above)
+        self.assertLess(above.index(SCRIPT_PATH), above.index(RULES_PATH))
+        self.assertIn("as core Spec Kit", above)
+        self.assertIn("does not exist", above)
+
+    def test_wrapper_has_text_above_and_below_the_core_template(self):
+        _text, above, below = wrapper_parts(self.stage)
+        self.assertGreater(len(above.split()), 40)
+        self.assertGreater(len(below.split()), 40)
+
+    def test_wrapper_names_the_subcommands_it_runs(self):
+        text, _above, _below = wrapper_parts(self.stage)
+        for subcommand in self.subcommands:
+            self.assertRegex(text, r"tdd_check\.py " + subcommand + r"\b")
+
+    def test_wrapper_says_what_to_do_without_a_verification_plan(self):
+        text, _above, _below = wrapper_parts(self.stage)
+        if self.handles_missing_plan:
+            self.assertIn("no Verification Plan", text)
+            self.assertIn("__SPECKIT_COMMAND_PLAN__", text)
+
+    def test_wrapper_requires_no_particular_tool(self):
+        text, _above, _below = wrapper_parts(self.stage)
+        for name in TOOL_NAMES + AGENT_NAMES:
+            self.assertNotIn(name, text.lower())
+
+
+class PlanWrapperTests(WrapperRules, unittest.TestCase):
+    stage = "plan"
+    subcommands = ("plan",)
+    handles_missing_plan = False
+
+
+class TasksWrapperTests(WrapperRules, unittest.TestCase):
+    stage = "tasks"
+    subcommands = ("tasks",)
+
+
+class AnalyzeWrapperTests(WrapperRules, unittest.TestCase):
+    stage = "analyze"
+    subcommands = ("plan", "tasks")
+
+
+class AddendumTests(unittest.TestCase):
+    def test_plan_addendum_holds_the_section_as_the_contract_defines_it(self):
+        lines = [line.rstrip() for line in read_repo("preset", "templates", "plan-addendum.md").splitlines()]
+        for expected in (
+            "## Verification Plan",
+            "### Verification commands",
+            "| ID | Command | Scope | Source |",
+            "### Verification obligations",
+            "| ID | Requirements | Scenario | Expected outcome | Level | Origin |",
+            "### Verification exemptions",
+            "| Requirement | Reason | Alternative verification |",
+        ):
+            self.assertIn(expected, lines)
+
+    def test_plan_addendum_says_the_section_holds_no_status(self):
+        self.assertIn("no status", read_repo("preset", "templates", "plan-addendum.md"))
+
+    def test_tasks_addendum_describes_both_labels(self):
+        text = read_repo("preset", "templates", "tasks-addendum.md")
+        self.assertIn("[VO-nnn]", text)
+        self.assertIn("[NT: reason]", text)
+
+    def test_addenda_require_no_particular_tool(self):
+        for name in ("plan-addendum.md", "tasks-addendum.md"):
+            text = read_repo("preset", "templates", name).lower()
+            for tool in TOOL_NAMES + AGENT_NAMES:
+                self.assertNotIn(tool, text, name)
+
+
 if __name__ == "__main__":
     unittest.main()
