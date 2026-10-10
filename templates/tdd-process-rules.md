@@ -175,6 +175,104 @@ reviewer sees it in the diff.
 
 ## Failures, exceptions and decisions
 
+Not every piece of work fits the cycle, and not every run succeeds. Each such case is
+recorded as what it is. Nothing is quietly skipped and nothing incomplete is reported as
+done.
+
+### A run that fails
+
+Investigate every failure that is not a valid Red step, and then say which of these it is
+(FR-036):
+
+| Classification | Meaning |
+|----------------|---------|
+| `assertion` | The test ran and its expectation was not met |
+| `defect` | The implementation is wrong in some other way: an error raised, a crash, a wrong type |
+| `environment` | The test could not run properly: a missing dependency, an unreachable service, a broken tool |
+| `unreliable` | The test passes and fails with no change to the code |
+
+```text
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py classify \
+    --seq <record number> --as <assertion|defect|environment|unreliable> [--note <what was found>]
+```
+
+- A failure stays `unclassified` until it has been investigated, and a task with an
+  unclassified failure cannot be completed.
+- An `unreliable` record counts as evidence in neither direction. Report the test as
+  unreliable; do not rerun it until it happens to pass.
+- An `environment` failure blocks the obligation. Report it as blocked, with what is
+  needed to unblock it. Never report a blocked test or an unresolved failure as verified
+  (FR-037, FR-040).
+- When tests cannot be run at all in the working environment, that is a blocking
+  condition: say so and claim no result.
+- Resolve a failure before starting work that depends on it (FR-026).
+
+### An exception to the cycle
+
+When a meaningful first failure cannot reasonably be shown, or the work is of a kind that
+test-first development does not suit, record an exception with the reason and the
+verification followed instead (FR-023, FR-038):
+
+```text
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py exception \
+    --task <task id> [--vo <obligation id> ...] --kind <kind> \
+    --rationale "<why the cycle was not followed>" --alternative "<how it is verified instead>" \
+    [--needs-approval]
+```
+
+An exception that names an obligation covers it for the test task and the behaviour tasks
+alike. It stands in for the failing-first run only: a passing run is still required of the
+behaviour task. Choose the kind that fits, and verification that suits the work (FR-039):
+
+| Kind | When | Verification that suits it |
+|------|------|----------------------------|
+| `no-meaningful-red` | The behaviour already holds, or a failing test would prove nothing | The test is written and passes, and the reason no failure could be shown is given |
+| `behaviour-preserving` | A refactor or optimisation that must leave behaviour unchanged | The existing tests covering the behaviour pass before the change (a `baseline` or `green` run) and after it (a `refactor` run of the same command and selector). Where coverage is too thin to show that behaviour was preserved, add tests first |
+| `legacy` | Code with no seams to test through | Characterisation tests of current behaviour, or a seam added first |
+| `external-system` | A system that cannot be exercised from the tests | A contract test, or a double that can fail as the real system can |
+| `generated-code` | Output of a generator | Tests of the generator's input or of the generated interface |
+| `migration` | A data or schema migration | A run against representative data, with before and after checks |
+| `infrastructure` | Build, deployment or configuration changes | A smoke or dry run that shows the effect |
+| `exploratory` | A spike whose result is not kept as it stands | Stated as exploratory; tests are written when the result is adopted |
+| `environment-blocked` | The tests cannot be run | None. The obligation stays blocked and its tasks stay incomplete until the tests can be run, then the cycle is followed |
+| `other` | A kind not named here | Stated in full |
+
+### When to ask the developer
+
+Explain each significant testing decision, unexpected failure and exception in terms the
+developer can assess (FR-051). Ask for a decision or an approval, and do not decide alone,
+when (FR-052):
+
+- the exception is of kind `legacy`, `exploratory` or `other`, or offers no alternative
+  verification (an alternative of `none`). These always exceed the agent's authority, and
+  the script marks them as needing approval;
+- an exception of any other kind involves a consequential trade-off. Give
+  `--needs-approval`, so that the judgement is visible to the reviewer;
+- a test change alters intended behaviour (see Test integrity);
+- a requirement turns out to be ambiguous or wrong.
+
+Record an approval only after the developer has given it in the conversation:
+`approve --id <EX-nn> --by <the developer's name>`.
+
+### Waiting for a decision
+
+When work has to wait for a person, open a Decision listing the affected task and every
+task that depends on it:
+
+```text
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py decision open \
+    --question "<what the person is asked to decide>" --tasks <task id> ...
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py decision resolve \
+    --id <DN-nn> --answer "<the decision>" --by "<who decided>"
+```
+
+- The tasks listed cannot be completed while the decision is open. Continue with the tasks
+  it does not list (FR-065).
+- Report the open decision and the work it is holding back, in progress reports and in the
+  final report.
+- Never proceed on an assumed answer.
+- When every remaining task depends on an open decision, stop and report.
+
 ## Traceability and review evidence
 
 ## Fitting the project
