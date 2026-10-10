@@ -17,6 +17,8 @@ Exit codes for every subcommand except ``hook``:
 """
 
 import argparse
+import datetime
+import hashlib
 import json
 import os
 import re
@@ -471,6 +473,35 @@ def yes_no(value, name, subject, findings):
     return value == "yes"
 
 
+def make_record(row, findings):
+    """A Test Execution Record from its row of cells, or None when it has no sequence number."""
+    if not row["Seq"].isdigit():
+        findings.append(Finding("EVIDENCE", EVIDENCE_FILE, f"Seq '{row['Seq']}' is not a number"))
+        return None
+    subject = "#" + row["Seq"]
+    check_enum(row["Phase"], PHASES, "phase", "EVIDENCE", subject, findings)
+    check_enum(row["Result"], RESULTS, "result", "EVIDENCE", subject, findings)
+    classification = undash(row["Classification"])
+    check_enum(classification, CLASSIFICATIONS + ("unclassified",), "classification", "EVIDENCE", subject, findings)
+    return Item(
+        seq=int(row["Seq"]),
+        time=row["Time"],
+        task=undash(row["Task"]),
+        obligations=split_list(row["Obligations"]),
+        phase=row["Phase"],
+        command=row["Command"],
+        selector=undash(row["Selector"]),
+        result=row["Result"],
+        valid=yes_no(row["Valid"], "Valid", subject, findings),
+        classification=classification,
+        files=split_list(row["Files"]),
+        fingerprint=undash(row["Fingerprint"]),
+        note=undash(row["Note"]),
+        check=row["Check"],
+        cells=row,
+    )
+
+
 def parse_evidence(text):
     """Read every table of tdd-evidence.md."""
     findings = []
@@ -483,37 +514,14 @@ def parse_evidence(text):
                 command=row["Command"],
                 result=row["Result"],
                 failures=undash(row["Pre-existing failures"]),
+                cells=row,
             )
         )
 
     for row in read_table(text, RECORDS_HEADING, RECORDS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
-        if not row["Seq"].isdigit():
-            findings.append(Finding("EVIDENCE", EVIDENCE_FILE, f"Seq '{row['Seq']}' is not a number"))
-            continue
-        subject = "#" + row["Seq"]
-        check_enum(row["Phase"], PHASES, "phase", "EVIDENCE", subject, findings)
-        check_enum(row["Result"], RESULTS, "result", "EVIDENCE", subject, findings)
-        classification = undash(row["Classification"])
-        check_enum(classification, CLASSIFICATIONS + ("unclassified",), "classification", "EVIDENCE", subject, findings)
-        evidence.records.append(
-            Item(
-                seq=int(row["Seq"]),
-                time=row["Time"],
-                task=undash(row["Task"]),
-                obligations=split_list(row["Obligations"]),
-                phase=row["Phase"],
-                command=row["Command"],
-                selector=undash(row["Selector"]),
-                result=row["Result"],
-                valid=yes_no(row["Valid"], "Valid", subject, findings),
-                classification=classification,
-                files=split_list(row["Files"]),
-                fingerprint=undash(row["Fingerprint"]),
-                note=undash(row["Note"]),
-                check=row["Check"],
-                cells=row,
-            )
-        )
+        record = make_record(row, findings)
+        if record is not None:
+            evidence.records.append(record)
 
     for row in read_table(text, EXCEPTIONS_HEADING, EXCEPTIONS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
         check_enum(row["Kind"], EXCEPTION_KINDS, "kind", "EVIDENCE", row["ID"], findings)
@@ -528,6 +536,7 @@ def parse_evidence(text):
                 alternative=undash(row["Alternative verification"]),
                 needs_approval=yes_no(row["Needs approval"], "Needs approval", row["ID"], findings),
                 approved_by=undash(row["Approved by"]),
+                cells=row,
             )
         )
 
@@ -543,6 +552,7 @@ def parse_evidence(text):
                 alters_behaviour=yes_no(row["Alters behaviour"], "Alters behaviour", row["ID"], findings),
                 approved_by=undash(row["Approved by"]),
                 new_fingerprint=undash(row["New fingerprint"]),
+                cells=row,
             )
         )
 
@@ -558,6 +568,7 @@ def parse_evidence(text):
                 answer=undash(row["Answer"]),
                 decided_by=undash(row["Decided by"]),
                 resolved=undash(row["Resolved"]),
+                cells=row,
             )
         )
     return evidence
@@ -595,6 +606,169 @@ def load_plan(feature_dir):
     except (OSError, UnicodeDecodeError) as error:
         raise UsageError(f"cannot read {PLAN_FILE}: {error}") from error
     return parse_plan(text or "")
+
+
+# ---------------------------------------------------------------------------
+# Evidence ledger: the only code that writes, and it writes only tdd-evidence.md
+# ---------------------------------------------------------------------------
+
+TEMPLATE_NAME = "tdd-evidence-template.md"
+TITLE_PLACEHOLDER = "<feature directory name>"
+FALLBACK_PREAMBLE = (
+    "# TDD Evidence: " + TITLE_PLACEHOLDER + "\n\n"
+    "<!-- Written by tdd_check.py. Do not edit by hand: use the script's subcommands. -->\n\n"
+)
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def clean(text):
+    """Supplied text as one table cell: a bar or a line break becomes a space."""
+    if text is None:
+        return "-"
+    cell = " ".join(re.sub(r"[|\r\n]", " ", str(text)).split())
+    return cell or "-"
+
+
+def join_cell(values):
+    return ", ".join(values) if values else "-"
+
+
+def repo_relative(path, root):
+    """A path as written in the Files cell: relative to the repository root, forward slashes."""
+    absolute = path if os.path.isabs(path) else os.path.join(root, path)
+    return os.path.relpath(absolute, root).replace(os.sep, "/")
+
+
+def fingerprint(files, root):
+    """Short hash over the paths and current contents of the files, in sorted path order.
+
+    A file that no longer exists is hashed as missing, so deleting it changes the value.
+    """
+    if not files:
+        return "-"
+    digest = hashlib.sha256()
+    for name in sorted(files):
+        digest.update(name.encode("utf-8") + b"\0")
+        path = os.path.join(root, name)
+        if os.path.isfile(path):
+            with open(path, "rb") as handle:
+                digest.update(b"\1" + handle.read())
+        else:
+            digest.update(b"\0")
+        digest.update(b"\0")
+    return digest.hexdigest()[:6]
+
+
+def check_value(previous, cells):
+    """Short hash of a record row's cells, chained from the previous row's check value."""
+    chained = [cells[name] for name in RECORDS_HEADER if name not in UNCHAINED_CELLS]
+    return hashlib.sha256((previous + "\n" + "|".join(chained)).encode("utf-8")).hexdigest()[:6]
+
+
+def empty_evidence():
+    return Item(baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=[], text=None)
+
+
+def load_evidence(feature_dir):
+    """The parsed evidence document. A feature with no document yet has empty evidence."""
+    text = read_text(os.path.join(feature_dir, EVIDENCE_FILE))
+    if text is None:
+        return empty_evidence()
+    evidence = parse_evidence(text)
+    evidence.text = text
+    return evidence
+
+
+def open_ledger(feature_dir):
+    """The evidence to append to. A malformed document is never written to."""
+    try:
+        evidence = load_evidence(feature_dir)
+    except (OSError, UnicodeDecodeError) as error:
+        raise UsageError(f"cannot read {EVIDENCE_FILE}: {error}") from error
+    if evidence.findings:
+        raise UsageError(f"{EVIDENCE_FILE} is malformed, nothing was recorded: {evidence.findings[0].reason}")
+    return evidence
+
+
+def preamble(feature_dir, evidence):
+    """The title and comment above the Summary: kept from the document, or taken from the template."""
+    if evidence.text is not None and SUMMARY_HEADING in evidence.text:
+        return evidence.text.split(SUMMARY_HEADING, 1)[0]
+    here = os.path.dirname(os.path.abspath(__file__))
+    template = read_text(os.path.join(os.path.dirname(os.path.dirname(here)), "templates", TEMPLATE_NAME))
+    text = template.split(SUMMARY_HEADING, 1)[0] if template and SUMMARY_HEADING in template else FALLBACK_PREAMBLE
+    return text.replace(TITLE_PLACEHOLDER, os.path.basename(os.path.normpath(feature_dir)))
+
+
+def render_table(header, rows):
+    lines = ["| " + " | ".join(header) + " |", "|" + "|".join("-" * (len(name) + 2) for name in header) + "|"]
+    lines.extend("| " + " | ".join(row[name] for name in header) + " |" for row in rows)
+    return "\n".join(lines) + "\n"
+
+
+def baseline_rows(evidence):
+    """One Baseline row per baseline record, derived from the record table."""
+    rows = []
+    for record in evidence.records:
+        if record.phase != "baseline":
+            continue
+        failures = "-"
+        if record.result == "fail":
+            failures = record.cells["Note"] if record.note else "failing before work began"
+        rows.append(
+            {
+                "Seq": record.cells["Seq"],
+                "Command": record.cells["Command"],
+                "Result": record.cells["Result"],
+                "Pre-existing failures": failures,
+            }
+        )
+    return rows
+
+
+def summary_body(feature_dir, evidence):
+    """The Summary below its generated-on line. Derived only from plan.md and the tables."""
+    return ""
+
+
+def render_evidence(feature_dir, evidence, now):
+    body = summary_body(feature_dir, evidence)
+    summary = f"_Generated from the tables below on {now}._\n" + ("\n" + body if body else "")
+    return (
+        preamble(feature_dir, evidence)
+        + SUMMARY_HEADING + "\n\n" + summary + "\n"
+        + BASELINE_HEADING + "\n\n" + render_table(BASELINE_HEADER, baseline_rows(evidence)) + "\n"
+        + RECORDS_HEADING + "\n\n" + render_table(RECORDS_HEADER, [item.cells for item in evidence.records]) + "\n"
+        + EXCEPTIONS_HEADING + "\n\n"
+        + render_table(EXCEPTIONS_HEADER, [item.cells for item in evidence.exceptions]) + "\n"
+        + EXPECTATIONS_HEADING + "\n\n"
+        + render_table(EXPECTATIONS_HEADER, [item.cells for item in evidence.expectations]) + "\n"
+        + DECISIONS_HEADING + "\n\n" + render_table(DECISIONS_HEADER, [item.cells for item in evidence.decisions])
+    )  # fmt: skip
+
+
+def write_evidence(feature_dir, evidence):
+    """Rewrite tdd-evidence.md whole, with a fresh Summary."""
+    text = render_evidence(feature_dir, evidence, utc_now())
+    path = os.path.join(feature_dir, EVIDENCE_FILE)
+    partial = path + ".partial"
+    with open(partial, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.replace(partial, path)
+
+
+def append_record(evidence, cells):
+    """Add a record row with the next sequence number and its chained check value."""
+    row = dict(cells)
+    row["Seq"] = str(len(evidence.records) + 1)
+    row["Time"] = utc_now()
+    row["Check"] = check_value(evidence.records[-1].check if evidence.records else "", row)
+    record = make_record(row, [])
+    evidence.records.append(record)
+    return record
 
 
 # ---------------------------------------------------------------------------
