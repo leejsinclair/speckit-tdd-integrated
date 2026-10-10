@@ -53,6 +53,13 @@ recorded in the plan's Verification Plan. It is not invented while the code is w
   (FR-013). A small, low-risk change gets one obligation per requirement and per
   acceptance scenario and no more. A large or risky one gets obligations for its failure
   conditions, boundaries and constraints as well.
+- **Write no more obligations than the requirements and scenarios need.** An obligation
+  verifies a requirement, an acceptance scenario, an edge case or a design constraint of
+  the specification. It is not one per assertion, and it is not a check of a property the
+  specification does not state (a value's type, the absence of a word in the source, that
+  an import works). For a small, low-risk change, write one obligation per requirement and
+  per acceptance scenario, at one level, and exempt nothing that a larger change would not
+  also exempt.
 - Planning names scenarios and outcomes. It does not write the executable tests: those are
   written one at a time during implementation, each just before the behaviour it verifies
   (FR-014).
@@ -107,7 +114,12 @@ baseline exists.
    - A test that fails for another reason, such as a missing import or a mistake in the
      test, is not a Red step either. Correct the test and run `red` again.
 3. **Green.** Make the minimum change that satisfies the failing test (FR-019), then run
-   it with `--phase green` on the behaviour task (FR-020).
+   it with `--phase green` on the behaviour task (FR-020). Minimum means minimum: do not
+   write the general solution while making the first test pass. Leave the cases of the
+   next obligations unhandled, so that each next test can be seen to fail for the intended
+   reason first. When a test of a later obligation passes at once because the first change
+   already covered it, that is the case for a `no-meaningful-red` exception, recorded with
+   that reason, and not for a test written to pass.
 4. **Refactor.** Tidy the code while the tests stay passing, and run the affected tests
    with `--phase refactor` afterwards (FR-021). Where there is nothing to tidy, there is
    nothing to run.
@@ -160,6 +172,11 @@ A passing suite means something only if the tests were not bent to produce it.
   - a change that **alters intended behaviour**. Give `--alters-behaviour`, explain the
     change to the developer, and wait. Only after the developer has approved it in the
     conversation, record `approve --id <XC-nn> --by <the developer's name>` (FR-032).
+- **Add the next obligation's test after the current one is green.** The fingerprint
+  covers the whole test file named on a failing-first record, so a test added to that file
+  between a Red run and its Green run changes the fingerprint and needs an expectation
+  change. Where it happens, record it as a correction with `expectation`: the justification
+  says that tests were added and no assertion changed.
 - **Test doubles must be able to fail as the real thing can.** A mock, fixture or double
   that stands in for an important integration boundary must be able to produce the
   failures that boundary can produce, so that it does not hide them (FR-033).

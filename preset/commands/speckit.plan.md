@@ -46,7 +46,10 @@ replace the example rows. Follow the "Verification intent" rules in the process 
    implementation. Add obligations for edge cases and failure conditions, and for the
    interfaces, data integrity rules, security requirements and integration boundaries in
    the design, in proportion to the scope, risk and complexity of the change. Choose a
-   level for each. Number them `VO-001`, `VO-002`, ... and set Origin to `planned`.
+   level for each. Number them `VO-001`, `VO-002`, ... and set Origin to `planned`. For a
+   small, low-risk change write one obligation per requirement and per acceptance
+   scenario, and no more: not one per assertion, and not for a property the specification
+   does not state.
 
 3. **Verification exemptions**: for a requirement that cannot sensibly be verified
    automatically, add a row with the reason and how it is verified instead. Write a single
