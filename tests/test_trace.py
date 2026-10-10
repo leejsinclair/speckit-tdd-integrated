@@ -164,5 +164,76 @@ class PlanCheckTests(TraceCase):
             self.assertEqual(snapshot(root), before)
 
 
+class TasksCheckTests(TraceCase):
+    subcommand = "tasks"
+
+    def test_valid_tasks_pass(self):
+        _root, result = self.run_on("valid-minimal")
+        self.assertEqual((result.code, result.out, result.err), (0, TASKS_PASSED, ""))
+
+    def test_unlabelled_task_fails_g1(self):
+        self.assert_only_finding("tasks-unlabelled", "G1 T015: no [VO-nnn] or [NT: reason] label")
+
+    def test_no_test_label_without_a_reason_fails_g1(self):
+        root = self.repo("valid-minimal")
+        tasks = read(self.feature(root), "tasks.md").replace("[NT: README wording only]", "[NT: ]")
+        write(self.feature(root), ["tasks.md"], tasks)
+        result = self.check(["tasks"], root)
+        self.assertEqual(result.code, 1)
+        self.assertIn("G1 T015: no [VO-nnn] or [NT: reason] label", result.out)
+
+    def test_label_naming_an_unknown_obligation_fails(self):
+        self.assert_only_finding("tasks-unknown-obligation", "TASKS T015: obligation VO-009 is not in the plan")
+
+    def test_obligation_named_by_no_task_fails_c2(self):
+        self.assert_only_finding("tasks-obligation-without-task", "C2 VO-002: no task names it")
+
+    def test_obligation_without_a_behaviour_task_fails_c2(self):
+        self.assert_only_finding(
+            "tasks-obligation-without-behaviour",
+            "C2 VO-002: named by a test task (T013) but by no behaviour task",
+        )
+
+    def test_behaviour_before_test_fails_c3(self):
+        self.assert_only_finding(
+            "tasks-behaviour-before-test",
+            "C3 VO-002: its first task T012 is a behaviour task, so no test task comes before it",
+        )
+
+    def test_plan_without_the_section_is_reported_as_the_gap(self):
+        root = self.repo("plan-no-section")
+        result = self.check(["tasks"], root)
+        self.assertEqual(result.code, 1)
+        self.assertIn("PLAN plan.md: no Verification Plan section", result.out)
+
+    def test_missing_tasks_file_is_a_usage_error(self):
+        root = self.repo("valid-minimal")
+        os.remove(os.path.join(self.feature(root), "tasks.md"))
+        result = self.check(["tasks"], root)
+        self.assertEqual(result.code, 2)
+        self.assertIn("tasks.md", result.err)
+
+    def test_json_carries_the_findings(self):
+        _root, result = self.run_on("tasks-unlabelled", ["--json"])
+        data = json.loads(result.out)
+        self.assertEqual(data["exit_code"], 1)
+        self.assertEqual(data["findings"][0]["rule"], "G1")
+        self.assertEqual(data["findings"][0]["subject"], "T015")
+
+    def test_output_is_identical_on_two_runs(self):
+        root = self.repo("tasks-behaviour-before-test")
+        first = self.check(["tasks"], root)
+        second = self.check(["tasks"], root)
+        self.assertEqual((first.code, first.out, first.err), (second.code, second.out, second.err))
+        self.assertEqual(first.code, 1)
+
+    def test_tasks_creates_or_changes_no_file(self):
+        for fixture in ("valid-minimal", "tasks-unlabelled"):
+            root = self.repo(fixture)
+            before = snapshot(root)
+            self.check(["tasks"], root)
+            self.assertEqual(snapshot(root), before)
+
+
 if __name__ == "__main__":
     unittest.main()
