@@ -1327,34 +1327,100 @@ def latest_red(feature, obligation):
     return latest_valid_red(feature.evidence, obligation)
 
 
+def covering_exceptions(task, feature, obligation):
+    """The exceptions that cover an obligation for this task.
+
+    An exception naming the obligation covers it for every task that names it. An
+    exception naming no obligation covers only the task it was raised on.
+    """
+    return [
+        exception
+        for exception in feature.evidence.exceptions
+        if obligation in exception.obligations or (not exception.obligations and exception.task == task.id)
+    ]
+
+
+def replacing_exceptions(task, feature, obligation):
+    """Covering exceptions that stand in for a failing-first record. environment-blocked ones do not."""
+    return [
+        exception
+        for exception in covering_exceptions(task, feature, obligation)
+        if exception.kind != NO_ALTERNATIVE_KIND
+    ]
+
+
 def gate_g1(task, feature):
     return rule_g1(task)
 
 
-def gate_g3(task, feature):
-    """Each obligation on a test or behaviour task has a valid failing-first record."""
+def gate_g2(task, feature):
+    """No open Decision lists the task."""
     return [
-        Finding("G3", f"{task.id} {obligation}", "no valid failing-first record and no exception")
-        for obligation in task.obligations
-        if latest_red(feature, obligation) is None
+        Finding("G2", f"{task.id} {decision.id}", "an open decision holds this task")
+        for decision in feature.evidence.decisions
+        if decision.status == "open" and task.id in decision.tasks
     ]
 
 
+def gate_g3(task, feature):
+    """Each obligation on a test or behaviour task has a valid failing-first record, or an exception."""
+    findings = []
+    for obligation in task.obligations:
+        if latest_red(feature, obligation) is not None or replacing_exceptions(task, feature, obligation):
+            continue
+        blocked = covering_exceptions(task, feature, obligation)
+        if blocked:
+            reason = f"{blocked[0].id} is environment-blocked and replaces no evidence: the obligation is blocked"
+        else:
+            reason = "no valid failing-first record and no exception"
+        findings.append(Finding("G3", f"{task.id} {obligation}", reason))
+    return findings
+
+
+def preserved(feature, obligation):
+    """A passing record before the change and a passing refactor record after it, on the same selector."""
+    records = feature.evidence.records
+    for after in records_of(feature, obligation, "refactor"):
+        if not counts(after) or after.result != "pass":
+            continue
+        for before in records:
+            if (
+                before.seq < after.seq
+                and before.phase in ("baseline", "green")
+                and before.result == "pass"
+                and counts(before)
+                and (before.command, before.selector) == (after.command, after.selector)
+            ):
+                return True
+    return False
+
+
 def gate_g4(task, feature):
-    """Each obligation on a behaviour task has a valid passing record after its failing-first record."""
+    """Each obligation on a behaviour task has a valid passing record after its failing-first record or exception."""
     if task.kind != "behaviour":
         return []
     findings = []
     for obligation in task.obligations:
+        subject = f"{task.id} {obligation}"
         red = latest_red(feature, obligation)
-        after = red.seq if red else 0
-        greens = [
-            record for record in records_of(feature, obligation, "green") if counts(record) and record.seq > after
-        ]
-        if not greens:
-            findings.append(
-                Finding("G4", f"{task.id} {obligation}", "no valid passing record after its failing-first record")
-            )
+        exceptions = replacing_exceptions(task, feature, obligation)
+        greens = [record for record in records_of(feature, obligation, "green") if counts(record)]
+        if red is None and exceptions:
+            preserving = [item for item in exceptions if item.kind == "behaviour-preserving"]
+            if preserving:
+                if not preserved(feature, obligation):
+                    findings.append(
+                        Finding(
+                            "G4",
+                            subject,
+                            f"{preserving[0].id} is behaviour-preserving and needs a passing baseline or green "
+                            "record before the change and a passing refactor record after it, on the same selector",
+                        )
+                    )
+            elif not any(record.time >= min(item.time for item in exceptions) for record in greens):
+                findings.append(Finding("G4", subject, "no valid passing record after its exception"))
+        elif not any(record.seq > (red.seq if red else 0) for record in greens):
+            findings.append(Finding("G4", subject, "no valid passing record after its failing-first record"))
     return findings
 
 
@@ -1382,6 +1448,40 @@ def gate_g5(task, feature):
     return findings
 
 
+def gate_g6(task, feature):
+    """The task's latest record is not a failure, and none of its failure records is unclassified."""
+    mine = [record for record in feature.evidence.records if record.task == task.id]
+    findings = []
+    if mine:
+        latest = mine[-1]
+        failing_first = latest.phase == "red" and counts(latest) and task.kind == "test"
+        if latest.result == "fail" and not failing_first:
+            findings.append(Finding("G6", f"{task.id} #{latest.seq}", "the latest record for the task is a failure"))
+    findings.extend(
+        Finding("G6", f"{task.id} #{record.seq}", "failure record is unclassified")
+        for record in mine
+        if record.result == "fail" and record.classification == "unclassified"
+    )
+    return findings
+
+
+def gate_g7(task, feature):
+    """Each Exception raised on the task or naming one of its obligations is complete and approved where needed."""
+    findings = []
+    for exception in feature.evidence.exceptions:
+        if exception.task != task.id and not any(item in task.obligations for item in exception.obligations):
+            continue
+        subject = f"{task.id} {exception.id}"
+        if not exception.rationale:
+            findings.append(Finding("G7", subject, "has no rationale"))
+        if not exception.alternative and exception.kind != NO_ALTERNATIVE_KIND:
+            findings.append(Finding("G7", subject, "has no alternative verification"))
+        needs = approval_required(exception.kind, exception.alternative, exception.needs_approval)
+        if needs and not exception.approved_by:
+            findings.append(Finding("G7", subject, "needs approval and has no approver"))
+    return findings
+
+
 def gate_g8(task, feature):
     """Each Expectation Change on the task names a requirement, and is approved where it alters behaviour."""
     findings = []
@@ -1405,8 +1505,8 @@ def gate_g9(task, feature):
     ]
 
 
-# In rule order. Later rules are added here.
-GATE_RULES = [gate_g1, gate_g3, gate_g4, gate_g5, gate_g8, gate_g9]
+# In rule order.
+GATE_RULES = [gate_g1, gate_g2, gate_g3, gate_g4, gate_g5, gate_g6, gate_g7, gate_g8, gate_g9]
 
 
 def gate_task(task, feature):
