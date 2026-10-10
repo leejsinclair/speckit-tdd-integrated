@@ -1255,23 +1255,60 @@ def cmd_gate(args, root, feature_dir):
 
 
 class ToolCall:
-    """What an agent is about to do to one file, in agent-neutral terms."""
+    """What an agent is about to do to one file, in agent-neutral terms.
 
-    def __init__(self, tool, file_path, tool_input):
-        self.tool = tool
+    ``result`` takes the file's current content (None when it does not exist) and
+    returns the content the tool call would leave. It raises ValueError when the
+    payload does not say.
+    """
+
+    def __init__(self, file_path, result):
         self.file_path = file_path
-        self.tool_input = tool_input
+        self.result = result
+
+
+def _apply_edit(text, edit):
+    old = edit.get("old_string")
+    new = edit.get("new_string")
+    if not isinstance(old, str) or not isinstance(new, str):
+        raise ValueError("an edit has no old_string or new_string")
+    if old == "":
+        return text or new
+    if old not in text:
+        # The tool will report this itself; nothing changes.
+        return text
+    return text.replace(old, new) if edit.get("replace_all") else text.replace(old, new, 1)
 
 
 def _adapt_edit_tool_payload(payload):
     """Read a pre-tool-use payload carrying ``tool_name`` and ``tool_input``."""
+    tool = payload.get("tool_name")
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         raise ValueError("payload has no tool_input")
     file_path = tool_input.get("file_path")
     if not isinstance(file_path, str) or not file_path:
         raise ValueError("payload has no tool_input.file_path")
-    return ToolCall(payload.get("tool_name"), file_path, tool_input)
+
+    def result(current):
+        text = current or ""
+        if tool == "Write":
+            content = tool_input.get("content")
+            if not isinstance(content, str):
+                raise ValueError("payload has no tool_input.content")
+            return content
+        if tool == "Edit":
+            return _apply_edit(text, tool_input)
+        if tool == "MultiEdit":
+            edits = tool_input.get("edits")
+            if not isinstance(edits, list) or not all(isinstance(edit, dict) for edit in edits):
+                raise ValueError("payload has no tool_input.edits")
+            for edit in edits:
+                text = _apply_edit(text, edit)
+            return text
+        raise ValueError(f"unknown tool '{tool}'")
+
+    return ToolCall(file_path, result)
 
 
 # The only agent-specific code in the script: one payload adapter per agent,
@@ -1288,11 +1325,39 @@ EVIDENCE_REFUSAL = (
     "decision with its subcommands, for example:\n"
     f"  python3 {SCRIPT_INSTALL_PATH} run --phase <phase> --command <id> ...\n"
 )
+PAYLOAD_REFUSAL = "Integrated TDD: cannot read the tool call payload"
 
 
 def refuse(message):
     sys.stderr.write(message if message.endswith("\n") else message + "\n")
     return EXIT_USAGE
+
+
+def completion_refusal(failing, findings):
+    """What the agent is told when a task it is marking complete fails its gate."""
+    first = failing[0]
+    return (
+        f"Integrated TDD: {', '.join(failing)} cannot be marked complete. tasks.md was not changed.\n"
+        + "".join(str(finding) + "\n" for finding in findings)
+        + "Two ways forward:\n"
+        "  1. Meet the rule. Record the missing evidence from a real test run, then mark the task complete:\n"
+        f"       python3 {SCRIPT_INSTALL_PATH} run --phase <red|green|refactor> --command <id> "
+        f"--task {first} --vo <obligation> ...\n"
+        "  2. Record an exception with a rationale, where the cycle does not fit this work:\n"
+        f"       python3 {SCRIPT_INSTALL_PATH} exception --task {first} --kind <kind> "
+        '--rationale "<why>" --alternative "<how it is verified instead>"\n'
+        f"Check a task before marking it: python3 {SCRIPT_INSTALL_PATH} gate --task {first}\n"
+    )
+
+
+def newly_completed(before, after):
+    """Tasks complete in the resulting content that were not complete before, absent ones included."""
+    already = {task.id for task in before if task.complete}
+    found = []
+    for task in after:
+        if task.complete and task.id not in already and task.id not in [item.id for item in found]:
+            found.append(task)
+    return found
 
 
 def cmd_hook(args, root):
@@ -1307,14 +1372,16 @@ def cmd_hook(args, root):
         # The stop fails closed for the guarded files only: an unreadable
         # payload is refused when it mentions one of them.
         if any(name in raw for name in GUARDED_FILES):
-            return refuse(f"Integrated TDD: cannot read the tool call payload: {error}")
+            return refuse(f"{PAYLOAD_REFUSAL}: {error}")
         return EXIT_OK
 
+    # Decided from the path alone, before any file is read.
     name = os.path.basename(call.file_path)
     if name not in GUARDED_FILES:
         return EXIT_OK
 
     path = call.file_path if os.path.isabs(call.file_path) else os.path.join(root, call.file_path)
+    # The guard follows the file: its own directory is the feature directory.
     feature_dir = os.path.dirname(path)
     try:
         if not has_verification_plan(feature_dir):
@@ -1324,6 +1391,39 @@ def cmd_hook(args, root):
 
     if name == EVIDENCE_FILE:
         return refuse(EVIDENCE_REFUSAL)
+
+    try:
+        current = read_text(path)
+        resulting = call.result(current)
+    except ValueError as error:
+        return refuse(f"{PAYLOAD_REFUSAL}: {error}")
+    except (OSError, UnicodeDecodeError) as error:
+        return refuse(f"Integrated TDD: cannot read {TASKS_FILE}: {error}")
+
+    after = parse_tasks(resulting)
+    completing = newly_completed(parse_tasks(current or ""), after)
+    if not completing:
+        return EXIT_OK
+
+    try:
+        feature = load_feature(feature_dir, tasks=after)
+    except UsageError as error:
+        return refuse(f"Integrated TDD: {error}")
+    blocked = unreadable(feature)
+    if blocked:
+        return refuse(
+            "Integrated TDD: the feature's artefacts cannot be read, so no task can be marked complete.\n"
+            + "".join(str(finding) + "\n" for finding in blocked)
+        )
+    failing = []
+    findings = []
+    for task in completing:
+        found = gate_task(task, feature)
+        if found:
+            failing.append(task.id)
+            findings.extend(found)
+    if failing:
+        return refuse(completion_refusal(failing, findings))
     return EXIT_OK
 
 
