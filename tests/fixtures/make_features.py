@@ -815,6 +815,192 @@ def _status_preexisting_failure():
 
 
 # ---------------------------------------------------------------------------
+# Compliance cases (T076): one failing and one passing case per rule C1 to C7.
+# The stored Summary of each is written out here as the view it should equal.
+# ---------------------------------------------------------------------------
+
+EVERY_TASK = done(TASKS, "T011", "T012", "T013", "T014", "T015")
+REQS_1 = "FR-001, US1-AS1"
+REQS_2 = "FR-002, US1-AS2, SC-001, DC-01, EC-01"
+NONE_LINE = "**Open decisions**: none. **Exceptions**: none. **Expectation changes**: none."
+VERIFIED_1 = "verified | assert, pass | pass (#3)"
+VERIFIED_2 = "verified | assert, pass | pass (#5)"
+
+
+def unverified(*pairs, exempt=True):
+    parts = []
+    for requirements, reason in pairs:
+        parts.extend(f"{ident} ({reason})" for ident in requirements.split(", "))
+    if exempt:
+        parts.append("FR-003 (exempt: see plan)")
+    return ", ".join(parts) or "none"
+
+
+def summary(row_1, row_2, not_verified=None, failures="none", reqs_1=REQS_1, extra_rows=()):
+    rows = [f"| VO-001 | {reqs_1} | {row_1} |", f"| VO-002 | {REQS_2} | {row_2} |"] + list(extra_rows)
+    return (
+        "_Generated from the tables below on 2026-10-10T14:00:00Z._\n\n"
+        "| Obligation | Requirements | Status | Tests | Latest result |\n"
+        "|------------|--------------|--------|-------|---------------|\n"
+        + "\n".join(rows) + "\n\n"
+        "**Not verified**: " + (not_verified if not_verified is not None else unverified()) + ".\n\n"
+        + NONE_LINE + "\n\n"
+        "**Pre-existing failures**: " + failures + ".\n"
+    )  # fmt: skip
+
+
+COMPLIANT_SUMMARY = summary(VERIFIED_1, VERIFIED_2)
+
+
+def compliant(**changes):
+    files = variant(tasks=EVERY_TASK, evidence=evidence(BOTH_CYCLES, summary=COMPLIANT_SUMMARY))
+    files.update(variant(**changes) if changes else {})
+    if "tasks" not in changes:
+        files["tasks.md"] = EVERY_TASK
+    if "evidence" not in changes:
+        files["tdd-evidence.md"] = evidence(BOTH_CYCLES, summary=COMPLIANT_SUMMARY)
+    return files
+
+
+for _rule in ("c1", "c2", "c3", "c4", "c5", "c6", "c7"):
+    CASES[f"compliance-{_rule}-pass"] = compliant
+
+
+@case("compliance-c1-fail")
+def _compliance_c1_fail():
+    plan = swap(PLAN, "| VO-001 | FR-001, US1-AS1 |", "| VO-001 | US1-AS1 |")
+    text = evidence(BOTH_CYCLES, summary=summary(VERIFIED_1, VERIFIED_2, reqs_1="US1-AS1"))
+    return compliant(plan=plan, evidence=text)
+
+
+@case("compliance-c2-fail")
+def _compliance_c2_fail():
+    return compliant(tasks=swap(EVERY_TASK, done(T014_LINE, "T014"), ""))
+
+
+@case("compliance-c3-fail")
+def _compliance_c3_fail():
+    return compliant(tasks=swap(EVERY_TASK, "T012 [US1] [VO-001] Implement", "T012 [US1] [VO-001] [VO-002] Implement"))
+
+
+@case("compliance-c4-fail")
+def _compliance_c4_fail():
+    # Row 3 was edited by hand after it was written: its selector no longer matches its check value.
+    text = evidence(BOTH_CYCLES, summary=summary("verified | assert, edited | pass (#3)", VERIFIED_2))
+    return compliant(evidence=swap(text, "| green | unit | pass | pass |", "| green | unit | edited | pass |"))
+
+
+@case("compliance-c5-fail")
+def _compliance_c5_fail():
+    records = [baseline(), RED_1, green("T012", "VO-001", command="adhoc"), RED_2, GREEN_2, checkpoint()]
+    return compliant(evidence=evidence(records, summary=COMPLIANT_SUMMARY))
+
+
+@case("compliance-c6-fail-no-checkpoint")
+def _compliance_c6_fail_no_checkpoint():
+    return compliant(evidence=evidence(BOTH_CYCLES[:-1], summary=COMPLIANT_SUMMARY))
+
+
+@case("compliance-c6-fail-checkpoint")
+def _compliance_c6_fail_checkpoint():
+    # The broad suite passed before the work and fails after it.
+    return compliant(evidence=evidence(BOTH_CYCLES + [checkpoint("fail")], summary=COMPLIANT_SUMMARY))
+
+
+PREEXISTING = [baseline("fail", "test_old_total fails")] + BOTH_CYCLES[1:-1] + [checkpoint("fail")]
+PREEXISTING_LINE = "#1 suite: test_old_total fails"
+
+
+@case("compliance-c6-pass-preexisting")
+def _compliance_c6_pass_preexisting():
+    # The latest checkpoint fails, as the baseline of the same command did, and the Summary says so.
+    text = evidence(PREEXISTING, summary=summary(VERIFIED_1, VERIFIED_2, failures=PREEXISTING_LINE))
+    return compliant(evidence=text)
+
+
+@case("compliance-c6-fail-not-reported")
+def _compliance_c6_fail_not_reported():
+    return compliant(evidence=evidence(PREEXISTING, summary=COMPLIANT_SUMMARY))
+
+
+@case("compliance-c6-fail-first-record")
+def _compliance_c6_fail_first_record():
+    records = [RED_1, baseline(), GREEN_1, RED_2, GREEN_2, checkpoint()]
+    text = evidence(records, summary=summary("verified | assert, pass | pass (#3)", VERIFIED_2))
+    return compliant(evidence=text)
+
+
+PLANNED_2 = unverified((REQS_2, "VO-002 planned"))
+
+
+@case("compliance-c7-fail-planned")
+def _compliance_c7_fail_planned():
+    text = evidence(FIRST_CYCLE + [checkpoint()], summary=summary(VERIFIED_1, "planned | - | -", PLANNED_2))
+    return compliant(tasks=done(TASKS, "T011", "T012", "T015"), evidence=text)
+
+
+@case("compliance-c7-fail-in-progress")
+def _compliance_c7_fail_in_progress():
+    text = evidence(
+        FIRST_CYCLE + [RED_2, checkpoint()],
+        summary=summary(VERIFIED_1, "in progress | assert | fail (#4)", unverified((REQS_2, "VO-002 in progress"))),
+    )
+    return compliant(tasks=done(TASKS, "T011", "T012", "T013", "T015"), evidence=text)
+
+
+DEFECT_2 = rec("T014", "VO-002", "green", "unit", "assert", "fail", "no", "defect", "tests/test_cart.py", FP_A)
+FAILED_RUN = FIRST_CYCLE + [RED_2, DEFECT_2, checkpoint()]
+BLOCKED_RUN = FIRST_CYCLE + [RED_2, ENV_FAIL_2, checkpoint()]
+HELD_TASKS = done(TASKS, "T011", "T012", "T013", "T015")
+CLAIMS_VERIFIED = summary(VERIFIED_1, VERIFIED_2)
+
+
+@case("compliance-c7-pass-failed")
+def _compliance_c7_pass_failed():
+    # An obligation failed and the Summary reports it as failed: the process was followed.
+    text = evidence(
+        FAILED_RUN,
+        summary=summary(VERIFIED_1, "failed | assert | fail (#5)", unverified((REQS_2, "VO-002 failed"))),
+    )
+    return compliant(tasks=HELD_TASKS, evidence=text)
+
+
+@case("compliance-c7-fail-failed-not-reported")
+def _compliance_c7_fail_failed_not_reported():
+    return compliant(tasks=HELD_TASKS, evidence=evidence(FAILED_RUN, summary=CLAIMS_VERIFIED))
+
+
+@case("compliance-c7-pass-blocked")
+def _compliance_c7_pass_blocked():
+    text = evidence(
+        BLOCKED_RUN,
+        summary=summary(VERIFIED_1, "blocked | assert, import | fail (#5)", unverified((REQS_2, "VO-002 blocked"))),
+    )
+    return compliant(tasks=HELD_TASKS, evidence=text)
+
+
+@case("compliance-c7-fail-blocked-not-reported")
+def _compliance_c7_fail_blocked_not_reported():
+    return compliant(tasks=HELD_TASKS, evidence=evidence(BLOCKED_RUN, summary=CLAIMS_VERIFIED))
+
+
+@case("compliance-c7-fail-stale-plan")
+def _compliance_c7_fail_stale_plan():
+    # An obligation was added to plan.md after the last record, so the stored Summary lacks it.
+    plan = swap(
+        PLAN,
+        "\n### Verification exemptions",
+        "| VO-003 | EC-02 | A very large cart is totalled | The total is returned | unit | discovered |\n"
+        "\n### Verification exemptions",
+    )
+    tasks = EVERY_TASK + (
+        "- [ ] T016 [US1] [VO-003] Write the failing test for a very large cart in tests/test_cart.py\n"
+        "- [ ] T017 [US1] [VO-003] Make the very large cart total pass in src/cart.py\n"
+    )
+    return compliant(plan=plan, tasks=tasks)
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
