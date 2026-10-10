@@ -61,6 +61,10 @@ def make_repo(fixture=None, feature_rel=FEATURE_REL, point_feature_json=True):
 
 def run_check(args, cwd, stdin=None, env=None):
     """Run the check script with ``args`` from ``cwd`` and return a Result."""
+    if not os.path.isfile(SCRIPT):
+        # Python exits 2 for a missing script, which a usage-error test would
+        # mistake for the behaviour it expects.
+        raise AssertionError("check script not found: scripts/python/tdd_check.py")
     full_env = dict(os.environ)
     full_env.pop("SPECIFY_FEATURE_DIRECTORY", None)
     if env:
