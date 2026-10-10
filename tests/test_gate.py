@@ -113,6 +113,121 @@ class TestIntegrityTests(GateCase):
         self.assert_passes("gate-g8-fail-no-approval", "T011")
 
 
+class DecisionGateTests(GateCase):
+    def test_g2_fails_for_a_task_on_an_open_decision(self):
+        self.assert_fails("gate-g2-fail", "T014", "G2 T014 DN-01: an open decision holds this task")
+        self.assert_fails("gate-g2-fail", "T013", "G2 T013 DN-01: an open decision holds this task")
+
+    def test_g2_passes_for_a_task_the_decision_does_not_list(self):
+        self.assert_passes("gate-g2-fail", "T012")
+        self.assert_passes("gate-g2-fail", "T015")
+
+    def test_g2_passes_after_resolution(self):
+        self.assert_passes("gate-g2-pass", "T014")
+
+
+class FailureGateTests(GateCase):
+    def test_g6_fails_when_the_latest_record_for_the_task_is_a_failure(self):
+        self.assert_fails("gate-g6-fail-latest", "T012", "G6 T012 #4: the latest record for the task is a failure")
+
+    def test_g6_fails_while_any_failure_record_for_the_task_is_unclassified(self):
+        self.assert_fails("gate-g6-fail-unclassified", "T012", "G6 T012 #3: failure record is unclassified")
+
+    def test_g6_passes_for_a_classified_failure_followed_by_a_pass(self):
+        self.assert_passes("gate-g6-pass", "T012")
+
+    def test_g6_passes_for_a_test_task_whose_latest_record_is_its_valid_red_record(self):
+        self.assert_passes("gate-g6-pass", "T011")
+
+    def test_an_unreliable_record_never_counts_for_g3_or_g4(self):
+        self.assert_fails(
+            "gate-unreliable",
+            "T011",
+            "G3 T011 VO-001: no valid failing-first record and no exception",
+            "G6 T011 #2: the latest record for the task is a failure",
+        )
+        result = self.gate("gate-unreliable", "--task", "T012")
+        self.assertIn("G3 T012 VO-001: no valid failing-first record and no exception", result.out)
+        self.assertIn("G4 T012 VO-001: no valid passing record after its failing-first record", result.out)
+
+
+class ExceptionGateTests(GateCase):
+    PRESERVING = (
+        "G4 T014 VO-002: EX-01 is behaviour-preserving and needs a passing baseline or green record before the "
+        "change and a passing refactor record after it, on the same selector"
+    )
+
+    def test_one_exception_covers_the_test_task_and_the_behaviour_task(self):
+        self.assert_passes("gate-exception-pass", "T013")
+        self.assert_passes("gate-exception-pass", "T014")
+
+    def test_g4_still_requires_a_passing_record(self):
+        self.assert_passes("gate-exception-no-green", "T013")
+        self.assert_fails(
+            "gate-exception-no-green", "T014", "G4 T014 VO-002: no valid passing record after its exception"
+        )
+
+    def test_g4_requires_the_passing_record_to_be_later_than_the_exception(self):
+        self.assert_fails(
+            "gate-exception-green-before", "T014", "G4 T014 VO-002: no valid passing record after its exception"
+        )
+
+    def test_an_exception_naming_no_obligation_covers_only_its_own_task(self):
+        self.assert_passes("gate-exception-task-only", "T013")
+        self.assert_fails(
+            "gate-exception-task-only", "T014", "G3 T014 VO-002: no valid failing-first record and no exception"
+        )
+
+    def test_an_exception_does_not_cover_another_obligation(self):
+        self.assert_fails(
+            "gate-exception-pass", "T011", "G3 T011 VO-001: no valid failing-first record and no exception"
+        )
+
+    def test_behaviour_preserving_needs_a_pass_before_and_a_refactor_pass_after_on_the_same_selector(self):
+        self.assert_passes("gate-exception-preserving-pass", "T014")
+        self.assert_passes("gate-exception-preserving-pass", "T013")
+        self.assert_fails("gate-exception-preserving-fail", "T014", self.PRESERVING)
+        self.assert_fails("gate-exception-preserving-no-refactor", "T014", self.PRESERVING)
+
+    def test_environment_blocked_lets_no_task_naming_the_obligation_pass(self):
+        blocked = "EX-01 is environment-blocked and replaces no evidence: the obligation is blocked"
+        self.assert_fails("gate-exception-blocked", "T013", f"G3 T013 VO-002: {blocked}")
+        result = self.gate("gate-exception-blocked", "--task", "T014")
+        self.assertEqual(result.code, 1)
+        self.assertIn(f"G3 T014 VO-002: {blocked}", result.out.splitlines())
+
+    def test_g7_fails_without_a_rationale_for_every_task_the_exception_covers(self):
+        for task in ("T013", "T014"):
+            self.assert_fails("gate-g7-fail-no-rationale", task, f"G7 {task} EX-01: has no rationale")
+
+    def test_g7_fails_without_an_alternative_where_one_is_required(self):
+        for task in ("T013", "T014"):
+            self.assert_fails("gate-g7-fail-no-alternative", task, f"G7 {task} EX-01: has no alternative verification")
+
+    def test_g7_fails_when_flagged_and_not_approved(self):
+        for task in ("T013", "T014"):
+            self.assert_fails("gate-g7-fail-flagged", task, f"G7 {task} EX-01: needs approval and has no approver")
+
+    def test_g7_fails_for_a_kind_beyond_the_agents_authority_even_when_not_flagged(self):
+        self.assert_fails("gate-g7-fail-kind", "T014", "G7 T014 EX-01: needs approval and has no approver")
+
+    def test_g7_fails_for_an_alternative_of_none_even_when_not_flagged(self):
+        self.assert_fails("gate-g7-fail-none", "T014", "G7 T014 EX-01: needs approval and has no approver")
+
+    def test_g7_passes_once_approved(self):
+        self.assert_passes("gate-g7-pass", "T013")
+        self.assert_passes("gate-g7-pass", "T014")
+
+    def test_g7_does_not_apply_to_a_task_the_exception_does_not_cover(self):
+        self.assert_passes("gate-g7-fail-flagged", "T015")
+        result = self.gate("gate-g7-fail-flagged", "--task", "T011")
+        self.assertNotIn("G7", result.out)
+
+    def test_environment_blocked_needs_no_alternative(self):
+        result = self.gate("gate-exception-blocked", "--task", "T013")
+        self.assertNotIn("G7", result.out)
+
+
 class GateUsageTests(GateCase):
     def test_unknown_task_is_a_usage_error(self):
         result = self.gate("gate-g4-pass", "--task", "T099")

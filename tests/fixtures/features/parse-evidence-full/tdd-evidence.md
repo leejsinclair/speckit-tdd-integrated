@@ -25,7 +25,7 @@ _Generated from the tables below on 2026-10-10T14:00:00Z._
 
 | ID | Time | Task | Obligations | Kind | Rationale | Alternative verification | Needs approval | Approved by |
 |----|------|------|-------------|------|-----------|--------------------------|----------------|-------------|
-| EX-01 | 2026-10-10T13:30:00Z | T013 | VO-002 | legacy | No seam to test through | Existing suite run before and after | yes | Lee Sinclair |
+| EX-01 | 2026-10-10T13:01:00Z | T013 | VO-002 | legacy | No seam to test through | Existing suite run before and after | yes | Lee Sinclair |
 
 ## Expectation changes
 

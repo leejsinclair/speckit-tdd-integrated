@@ -122,9 +122,10 @@ def chain(records):
 
 
 def exc(ident, task, vos, kind, rationale="No seam to test through", alternative="Existing suite run before and after",
-        needs="no", approved="-"):  # fmt: skip
+        needs="no", approved="-", after=1):  # fmt: skip
+    """An exception raised just after record ``after``: record n is stamped minute n."""
     return {
-        "ID": ident, "Time": stamp(30), "Task": task, "Obligations": vos, "Kind": kind, "Rationale": rationale,
+        "ID": ident, "Time": stamp(after), "Task": task, "Obligations": vos, "Kind": kind, "Rationale": rationale,
         "Alternative verification": alternative, "Needs approval": needs, "Approved by": approved,
     }  # fmt: skip
 
@@ -621,6 +622,140 @@ def _gate_g8_fail_no_approval():
 def _gate_g8_pass():
     change = xc("XC-01", "T012", FP_B, alters="yes", approved="Lee Sinclair")
     return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(CHANGED_CYCLE, expectations=[change]))
+
+
+# ---------------------------------------------------------------------------
+# Gate cases for G2, G6, G7 and exceptions (T060)
+# ---------------------------------------------------------------------------
+
+ALL_DONE = done(TASKS, "T011", "T012", "T013", "T014")
+FAILED_GREEN = rec("T012", "VO-001", "green", "unit", "assert", "fail", "no", "defect", "tests/test_cart.py", FP_A)
+UNCLASSIFIED_GREEN = dict(FAILED_GREEN, Classification="unclassified")
+
+
+@case("gate-g2-fail")
+def _gate_g2_fail():
+    return variant(tasks=ALL_DONE, evidence=evidence(BOTH_CYCLES, decisions=[dn("DN-01", "T013, T014")]))
+
+
+@case("gate-g2-pass")
+def _gate_g2_pass():
+    resolved = dn("DN-01", "T013, T014", "resolved", "Return zero", "Lee Sinclair")
+    return variant(tasks=ALL_DONE, evidence=evidence(BOTH_CYCLES, decisions=[resolved]))
+
+
+@case("gate-g6-fail-latest")
+def _gate_g6_fail_latest():
+    # The task passed and then failed: its latest record is a failure, classified as a defect.
+    return variant(tasks=ALL_DONE, evidence=evidence([baseline(), RED_1, GREEN_1, FAILED_GREEN]))
+
+
+@case("gate-g6-fail-unclassified")
+def _gate_g6_fail_unclassified():
+    return variant(tasks=ALL_DONE, evidence=evidence([baseline(), RED_1, UNCLASSIFIED_GREEN, GREEN_1]))
+
+
+@case("gate-g6-pass")
+def _gate_g6_pass():
+    return variant(tasks=ALL_DONE, evidence=evidence([baseline(), RED_1, FAILED_GREEN, GREEN_1]))
+
+
+@case("gate-unreliable")
+def _gate_unreliable():
+    # Both runs for VO-001 were later classified unreliable, so neither counts as evidence.
+    flaky_red = dict(RED_1, Classification="unreliable")
+    flaky_fail = dict(FAILED_GREEN, Classification="unreliable")
+    return variant(tasks=ALL_DONE, evidence=evidence([baseline(), flaky_red, flaky_fail]))
+
+
+def _with_exception(records, exception, tasks=ALL_DONE):
+    return variant(tasks=tasks, evidence=evidence(records, exceptions=[exception]))
+
+
+NO_RED = exc("EX-01", "T013", "VO-002", "no-meaningful-red")
+
+
+@case("gate-exception-pass")
+def _gate_exception_pass():
+    # One exception raised on the test task covers the obligation's behaviour task too.
+    return _with_exception([baseline(), GREEN_2], NO_RED)
+
+
+@case("gate-exception-no-green")
+def _gate_exception_no_green():
+    return _with_exception([baseline()], NO_RED)
+
+
+@case("gate-exception-green-before")
+def _gate_exception_green_before():
+    # The only passing record was made before the exception was raised.
+    return _with_exception([baseline(), GREEN_2, checkpoint()], dict(NO_RED, Time=stamp(3)))
+
+
+@case("gate-exception-task-only")
+def _gate_exception_task_only():
+    # An exception naming no obligation covers only the task it was raised on.
+    return _with_exception([baseline(), GREEN_2], exc("EX-01", "T013", "-", "no-meaningful-red"))
+
+
+PRESERVING = exc("EX-01", "T013", "VO-002", "behaviour-preserving")
+REFACTOR_SUITE = rec("T014", "VO-002", "refactor", "suite", "-", "pass", "yes")
+
+
+@case("gate-exception-preserving-pass")
+def _gate_exception_preserving_pass():
+    return _with_exception([baseline(), REFACTOR_SUITE], PRESERVING)
+
+
+@case("gate-exception-preserving-fail")
+def _gate_exception_preserving_fail():
+    # A passing run after the change, but none before it on the same selector.
+    other = rec("T014", "VO-002", "refactor", "unit", "pass", "pass", "yes")
+    return _with_exception([baseline(), other], PRESERVING)
+
+
+@case("gate-exception-preserving-no-refactor")
+def _gate_exception_preserving_no_refactor():
+    return _with_exception([baseline(), GREEN_2], PRESERVING)
+
+
+@case("gate-exception-blocked")
+def _gate_exception_blocked():
+    blocked = exc("EX-01", "T013", "VO-002", "environment-blocked", "The test database cannot be reached", "-")
+    return _with_exception([baseline(), GREEN_2], blocked)
+
+
+@case("gate-g7-fail-no-rationale")
+def _gate_g7_fail_no_rationale():
+    return _with_exception([baseline(), GREEN_2], exc("EX-01", "T013", "VO-002", "generated-code", rationale="-"))
+
+
+@case("gate-g7-fail-no-alternative")
+def _gate_g7_fail_no_alternative():
+    return _with_exception([baseline(), GREEN_2], exc("EX-01", "T013", "VO-002", "generated-code", alternative="-"))
+
+
+@case("gate-g7-fail-flagged")
+def _gate_g7_fail_flagged():
+    return _with_exception([baseline(), GREEN_2], exc("EX-01", "T013", "VO-002", "migration", needs="yes"))
+
+
+@case("gate-g7-fail-kind")
+def _gate_g7_fail_kind():
+    # Not flagged, but the kind is beyond the agent's authority.
+    return _with_exception([baseline(), GREEN_2], exc("EX-01", "T013", "VO-002", "legacy", needs="no"))
+
+
+@case("gate-g7-fail-none")
+def _gate_g7_fail_none():
+    # Not flagged, but no alternative verification is offered.
+    return _with_exception([baseline(), GREEN_2], exc("EX-01", "T013", "VO-002", "migration", alternative="none"))
+
+
+@case("gate-g7-pass")
+def _gate_g7_pass():
+    approved = exc("EX-01", "T013", "VO-002", "legacy", needs="yes", approved="Lee Sinclair")
+    return _with_exception([baseline(), GREEN_2], approved)
 
 
 # ---------------------------------------------------------------------------
