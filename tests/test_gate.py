@@ -74,6 +74,45 @@ class FirstRulesTests(GateCase):
         self.assert_passes("gate-all-fail", "T015")
 
 
+class TestIntegrityTests(GateCase):
+    """G5 and G8: a test changed between its Red and Green runs."""
+
+    G5 = (
+        "G5 T012 VO-001: test files changed between the failing-first record (#2) and the passing record (#3) "
+        "with no expectation change"
+    )
+
+    def test_g5_fails_when_the_green_fingerprint_differs_from_the_red_one(self):
+        self.assert_fails("gate-g5-fail", "T012", self.G5)
+
+    def test_g5_passes_when_an_expectation_change_for_the_task_carries_the_new_fingerprint(self):
+        self.assert_passes("gate-g5-pass", "T012")
+
+    def test_g5_is_not_met_by_an_expectation_change_for_another_task(self):
+        self.assert_fails("gate-g5-other-task", "T012", self.G5)
+
+    def test_g5_does_not_apply_without_a_valid_red_record(self):
+        result = self.gate("gate-g5-no-red", "--task", "T012")
+        self.assertEqual(result.code, 1)
+        self.assertIn("G3 T012 VO-001: no valid failing-first record and no exception", result.out)
+        self.assertNotIn("G5", result.out)
+
+    def test_a_test_task_is_not_subject_to_g5(self):
+        self.assert_passes("gate-g5-fail", "T011")
+
+    def test_g8_fails_when_an_expectation_change_names_no_requirement(self):
+        self.assert_fails("gate-g8-fail-no-requirement", "T012", "G8 T012 XC-01: names no requirement")
+
+    def test_g8_fails_when_a_change_alters_behaviour_without_approval(self):
+        self.assert_fails("gate-g8-fail-no-approval", "T012", "G8 T012 XC-01: alters behaviour and has no approval")
+
+    def test_g8_passes_once_approved(self):
+        self.assert_passes("gate-g8-pass", "T012")
+
+    def test_g8_applies_only_to_the_task_the_change_was_recorded_for(self):
+        self.assert_passes("gate-g8-fail-no-approval", "T011")
+
+
 class GateUsageTests(GateCase):
     def test_unknown_task_is_a_usage_error(self):
         result = self.gate("gate-g4-pass", "--task", "T099")

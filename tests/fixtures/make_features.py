@@ -572,6 +572,58 @@ def _gate_all_fail():
 
 
 # ---------------------------------------------------------------------------
+# Gate cases for G5 and G8 (T054)
+# ---------------------------------------------------------------------------
+
+GREEN_CHANGED = green("T012", "VO-001", fp=FP_B)
+CHANGED_CYCLE = [baseline(), RED_1, GREEN_CHANGED]
+
+
+@case("gate-g5-fail")
+def _gate_g5_fail():
+    # The test file's fingerprint differs between red and green and nothing records why.
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(CHANGED_CYCLE))
+
+
+@case("gate-g5-pass")
+def _gate_g5_pass():
+    change = xc("XC-01", "T012", FP_B)
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(CHANGED_CYCLE, expectations=[change]))
+
+
+@case("gate-g5-other-task")
+def _gate_g5_other_task():
+    # The expectation change carries the fingerprint but was recorded for another task.
+    change = xc("XC-01", "T014", FP_B)
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(CHANGED_CYCLE, expectations=[change]))
+
+
+@case("gate-g5-no-red")
+def _gate_g5_no_red():
+    # No valid failing-first record: G3 fails and G5 has nothing to compare.
+    only_green = green("T012", "VO-001", files="-", fp="-")
+    return variant(tasks=done(TASKS, "T012"), evidence=evidence([baseline(), only_green]))
+
+
+@case("gate-g8-fail-no-requirement")
+def _gate_g8_fail_no_requirement():
+    change = xc("XC-01", "T012", FP_B, requirements="-")
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(CHANGED_CYCLE, expectations=[change]))
+
+
+@case("gate-g8-fail-no-approval")
+def _gate_g8_fail_no_approval():
+    change = xc("XC-01", "T012", FP_B, alters="yes")
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(CHANGED_CYCLE, expectations=[change]))
+
+
+@case("gate-g8-pass")
+def _gate_g8_pass():
+    change = xc("XC-01", "T012", FP_B, alters="yes", approved="Lee Sinclair")
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(CHANGED_CYCLE, expectations=[change]))
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
