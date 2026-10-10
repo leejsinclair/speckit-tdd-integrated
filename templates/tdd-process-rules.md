@@ -132,6 +132,47 @@ baseline exists.
 
 ## Test integrity
 
+A passing suite means something only if the tests were not bent to produce it.
+
+- **Never remove, weaken, skip or bypass a test to obtain a pass** (FR-029). This holds
+  for every existing test in the project, and not only for the test files a check covers.
+  An existing test that starts failing is a regression to investigate (FR-027): find what
+  the change broke. Any change made to an existing test file is named in the stage's
+  final report, with its reason.
+- **Assert a meaningful outcome.** An assertion checks what the behaviour must produce,
+  and not merely that the code ran without error (FR-030).
+- **Tests agree with the approved requirements and design** (FR-031). A test that
+  contradicts the specification is wrong, however convenient.
+- **A test changed after its Red run is recorded.** The script takes a fingerprint of the
+  test files at the failing-first run and again at the passing run. When they differ, the
+  task's gate fails until the change is recorded:
+
+  ```text
+  python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py expectation \
+      --task <task id> --tests <test file> ... --requirement <id> ... \
+      --justification "<why the expectation was wrong or has changed>" [--alters-behaviour]
+  ```
+
+  The justification names the requirement the change is made against. Decide honestly
+  which of two things the change is:
+  - a **correction**, which brings the test into line with the approved requirements. It
+    needs the recorded justification and no approval.
+  - a change that **alters intended behaviour**. Give `--alters-behaviour`, explain the
+    change to the developer, and wait. Only after the developer has approved it in the
+    conversation, record `approve --id <XC-nn> --by <the developer's name>` (FR-032).
+- **Test doubles must be able to fail as the real thing can.** A mock, fixture or double
+  that stands in for an important integration boundary must be able to produce the
+  failures that boundary can produce, so that it does not hide them (FR-033).
+- **Passing tests are not proof while coverage is incomplete.** Do not report that
+  requirements are met when some have no verification or are not yet verified (FR-034).
+- **A requirement is never altered to pass.** When implementation shows a requirement to
+  be wrong, raise it with the developer for correction through the specification. Do not
+  change the requirement, or the test, to match the code (FR-035).
+
+**Limit.** Only the test files named on a failing-first record are fingerprinted. A change
+to any other existing test is not detected by a check: the rules above forbid it, and a
+reviewer sees it in the diff.
+
 ## Failures, exceptions and decisions
 
 ## Traceability and review evidence
