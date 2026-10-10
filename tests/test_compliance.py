@@ -169,9 +169,14 @@ class ComplianceBehaviourTests(ComplianceCase):
 class ExampleRunTests(unittest.TestCase):
     """The two artefact sets shipped for evaluation (FR-057, SC-011)."""
 
+    def require(self, feature_dir):
+        """The run's artefacts must be there. An empty directory is not a run: git does not track one."""
+        for name in ("spec.md", "plan.md", "tasks.md", "tdd-evidence.md"):
+            if not os.path.isfile(os.path.join(REPO, feature_dir, name)):
+                raise AssertionError(f"missing example run artefact: {feature_dir}/{name}")
+
     def run_on(self, feature_dir):
-        if not os.path.isdir(os.path.join(REPO, feature_dir)):
-            raise AssertionError("missing example run: " + feature_dir)
+        self.require(feature_dir)
         return run_check(["compliance", "--feature-dir", feature_dir], REPO)
 
     def test_the_run_that_followed_the_process_is_compliant(self):
@@ -194,8 +199,7 @@ class ExampleRunTests(unittest.TestCase):
 
     def test_compliance_writes_nothing_to_the_example_runs(self):
         for feature_dir in (COMPLIANT_RUN, TESTS_ONLY_RUN):
-            if not os.path.isdir(os.path.join(REPO, feature_dir)):
-                raise AssertionError("missing example run: " + feature_dir)
+            self.require(feature_dir)
             before = snapshot(os.path.join(REPO, feature_dir))
             self.run_on(feature_dir)
             self.assertEqual(snapshot(os.path.join(REPO, feature_dir)), before)

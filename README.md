@@ -142,6 +142,12 @@ These are limits of the first release. None is presented as covered.
   same command, Spec Kit stores its composed text and does not recompose it when this
   preset is removed. The leftover note says to carry on as core Spec Kit when the check
   script is absent, so it is inert. Removing and re-adding the other preset refreshes it.
+- **The archive install commands were not run against a published tag.** The path tested
+  is a release tree made by `git archive` and installed with `--dev`. The `--from` form
+  shown under Install uses Spec Kit's documented option and is untried here.
+- **Large features slow down.** `gate --all`, `status` and `compliance` scan every record
+  per task or obligation and take longer than two seconds at about ten times the stated
+  scale of 200 tasks and 1,000 records.
 - **Windows is untested.**
 - **No bundle.** The two packages are installed by two commands.
 
