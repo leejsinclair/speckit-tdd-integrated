@@ -903,9 +903,42 @@ def judge(phase, command, status, output, timed_out, expect):
     return result, valid, classification, note
 
 
+def counts(record):
+    """Whether a record counts as evidence for its phase. An unreliable record never does."""
+    return record.valid and record.classification != "unreliable"
+
+
+def latest_valid_red(evidence, obligation):
+    """The latest valid failing-first record of an obligation, whichever task it was made on."""
+    found = [
+        record
+        for record in evidence.records
+        if record.phase == "red" and obligation in record.obligations and counts(record)
+    ]
+    return found[-1] if found else None
+
+
 def run_files(args, root, evidence):
-    """The test files a run is fingerprinted over."""
-    return sorted(unique(repo_relative(path, root) for path in args.tests or []))
+    """The test files a run is fingerprinted over.
+
+    Named with --tests; otherwise, for green and refactor, read back from the latest
+    valid failing-first record of the obligations named.
+    """
+    if args.tests is not None:
+        return sorted(unique(repo_relative(path, root) for path in args.tests))
+    if args.phase not in ("green", "refactor"):
+        return []
+    listed = []
+    for obligation in args.vo:
+        red = latest_valid_red(evidence, obligation)
+        if red is not None and red.files not in listed:
+            listed.append(red.files)
+    if len(listed) > 1:
+        raise UsageError(
+            "the obligations named have failing-first records that list different files: "
+            "run them separately; nothing was recorded"
+        )
+    return listed[0] if listed else []
 
 
 def cmd_run(args, root, feature_dir):
@@ -959,6 +992,53 @@ def cmd_run(args, root, feature_dir):
         "output_tail": tail,
     }
     return (EXIT_OK if valid else EXIT_FAIL), [], lines, extra
+
+
+# ---------------------------------------------------------------------------
+# Recording subcommands other than run
+# ---------------------------------------------------------------------------
+
+
+def next_id(prefix, items):
+    return f"{prefix}-{len(items) + 1:02d}"
+
+
+def cmd_expectation(args, root, feature_dir):
+    """Record a change to a test made after its failing-first run, with the files' new fingerprint."""
+    require_plan(feature_dir)
+    task = find_task(parse_tasks(require_text(feature_dir, TASKS_FILE)), args.task)
+    evidence = open_ledger(feature_dir)
+    files = sorted(unique(repo_relative(path, root) for path in args.tests))
+    ident = next_id("XC", evidence.expectations)
+    row = {
+        "ID": ident,
+        "Time": utc_now(),
+        "Task": task.id,
+        "Files": join_cell(files),
+        "Requirements": join_cell([clean(item) for item in args.requirement]),
+        "Justification": clean(args.justification),
+        "Alters behaviour": "yes" if args.alters_behaviour else "no",
+        "Approved by": clean(args.approved_by),
+        "New fingerprint": fingerprint(files, root),
+    }
+    evidence.expectations.append(Item(id=ident, cells=row))
+    write_evidence(feature_dir, evidence)
+    return EXIT_OK, [], [f"recorded {ident} for {task.id}"], {"id": ident}
+
+
+def cmd_approve(args, root, feature_dir):
+    """Record a person's approval. The name is recorded as given and cannot be verified."""
+    require_plan(feature_dir)
+    evidence = open_ledger(feature_dir)
+    entry = next((item for item in evidence.expectations if item.id == args.id), None)
+    if entry is None:
+        raise UsageError(f"no entry {args.id} in {EVIDENCE_FILE}; nothing was recorded")
+    if entry.cells["Approved by"] != "-":
+        raise UsageError(f"{args.id} is already approved by {entry.cells['Approved by']}; nothing was recorded")
+    name = clean(args.by)
+    entry.cells["Approved by"] = name
+    write_evidence(feature_dir, evidence)
+    return EXIT_OK, [], [f"recorded approval of {args.id} by {name}"], {"id": args.id}
 
 
 # ---------------------------------------------------------------------------
@@ -1136,11 +1216,6 @@ def unreadable(feature):
     return list(feature.evidence.findings)
 
 
-def counts(record):
-    """Whether a record counts as evidence for its phase. An unreliable record never does."""
-    return record.valid and record.classification != "unreliable"
-
-
 def records_of(feature, obligation, phase=None):
     return [
         record
@@ -1150,9 +1225,7 @@ def records_of(feature, obligation, phase=None):
 
 
 def latest_red(feature, obligation):
-    """The latest valid failing-first record of an obligation, whichever task it was made on."""
-    found = [record for record in records_of(feature, obligation, "red") if counts(record)]
-    return found[-1] if found else None
+    return latest_valid_red(feature.evidence, obligation)
 
 
 def gate_g1(task, feature):
@@ -1515,6 +1588,8 @@ HANDLERS = {
     "tasks": cmd_tasks,
     "run": cmd_run,
     "gate": cmd_gate,
+    "expectation": cmd_expectation,
+    "approve": cmd_approve,
 }
 
 
