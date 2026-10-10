@@ -177,6 +177,7 @@ COMMAND_ID = re.compile(r"^[a-z0-9-]+$")
 OBLIGATION_ID = re.compile(r"^VO-\d{3,}$")
 TASK_LINE = re.compile(r"^\s*- \[([ xX])\] (T\d{3,})(?=\s|$)(.*)$")
 LABEL = re.compile(r"\s*\[([^\]]*)\]")
+FENCE = re.compile(r"^\s*(```+|~~~+)(.*)$")
 STORY_HEADING = re.compile(r"^###\s+User Story\s+(\d+)\b")
 SCENARIOS_MARKER = re.compile(r"^\*\*Acceptance Scenarios\*\*")
 NUMBERED_ITEM = re.compile(r"^\d+\.\s")
@@ -413,7 +414,17 @@ def parse_tasks(text):
     """Read task lines: id, checkbox, labels, and kind by the first-to-name rule."""
     tasks = []
     named = set()
+    fence = None
     for number, line in enumerate(text.splitlines(), 1):
+        # Task lines inside a fenced code block are examples, not tasks.
+        marker = FENCE.match(line)
+        if marker and fence is None:
+            fence = marker.group(1)[0]
+            continue
+        if fence is not None:
+            if marker and marker.group(1)[0] == fence and not marker.group(2).strip():
+                fence = None
+            continue
         found = TASK_LINE.match(line)
         if not found:
             continue
@@ -659,6 +670,16 @@ def rule_g1(task):
     return []
 
 
+def duplicate_task_ids(tasks):
+    seen = set()
+    repeated = []
+    for task in tasks:
+        if task.id in seen and task.id not in repeated:
+            repeated.append(task.id)
+        seen.add(task.id)
+    return [Finding("TASKS", ident, "task id is used more than once") for ident in repeated]
+
+
 def unknown_obligations(plan, tasks):
     known = {obligation.id for obligation in plan.obligations}
     return [
@@ -698,6 +719,7 @@ def check_tasks(plan, tasks):
     findings = []
     for task in tasks:
         findings.extend(rule_g1(task))
+    findings.extend(duplicate_task_ids(tasks))
     findings.extend(unknown_obligations(plan, tasks))
     findings.extend(rule_c2_c3(plan, tasks))
     return findings
