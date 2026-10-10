@@ -1,5 +1,5 @@
 target-version = "py39"
-line-length = 110
+line-length = 120
 extend-exclude = [".specify", ".claude", "examples"]
 
 [lint]

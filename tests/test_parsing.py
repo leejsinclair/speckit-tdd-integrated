@@ -176,7 +176,7 @@ class TaskTests(unittest.TestCase):
 
     def test_task_lines_yield_id_and_order(self):
         tasks = parse("parse_tasks", "parse-task-labels", "tasks.md")
-        self.assertEqual([task.id for task in tasks], ["T00%d" % n for n in range(1, 9)])
+        self.assertEqual([task.id for task in tasks], [f"T00{n}" for n in range(1, 9)])
 
     def test_checkbox_states(self):
         tasks = self.tasks()

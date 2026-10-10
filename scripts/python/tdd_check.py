@@ -19,6 +19,7 @@ Exit codes for every subcommand except ``hook``:
 import argparse
 import json
 import os
+import re
 import sys
 
 EXIT_OK = 0
@@ -103,6 +104,452 @@ def has_verification_plan(feature_dir):
         return False
     with open(path, encoding="utf-8") as handle:
         return any(line.rstrip() == VERIFICATION_PLAN_HEADING for line in handle)
+
+
+# ---------------------------------------------------------------------------
+# Artefact parser (contracts/artefact-formats.md)
+#
+# Malformed input is reported as findings and never raises.
+# ---------------------------------------------------------------------------
+
+SCOPES = ("focused", "broad")
+LEVELS = ("unit", "integration", "contract", "end-to-end", "other")
+ORIGINS = ("planned", "discovered")
+RESULTS = ("pass", "fail")
+
+COMMANDS_HEADING = "### Verification commands"
+OBLIGATIONS_HEADING = "### Verification obligations"
+EXEMPTIONS_HEADING = "### Verification exemptions"
+COMMANDS_HEADER = ["ID", "Command", "Scope", "Source"]
+OBLIGATIONS_HEADER = ["ID", "Requirements", "Scenario", "Expected outcome", "Level", "Origin"]
+EXEMPTIONS_HEADER = ["Requirement", "Reason", "Alternative verification"]
+
+BASELINE_HEADING = "## Baseline"
+RECORDS_HEADING = "## Test execution records"
+EXCEPTIONS_HEADING = "## Exceptions"
+EXPECTATIONS_HEADING = "## Expectation changes"
+DECISIONS_HEADING = "## Decisions"
+SUMMARY_HEADING = "## Summary"
+BASELINE_HEADER = ["Seq", "Command", "Result", "Pre-existing failures"]
+RECORDS_HEADER = [
+    "Seq",
+    "Time",
+    "Task",
+    "Obligations",
+    "Phase",
+    "Command",
+    "Selector",
+    "Result",
+    "Valid",
+    "Classification",
+    "Files",
+    "Fingerprint",
+    "Note",
+    "Check",
+]
+EXCEPTIONS_HEADER = [
+    "ID",
+    "Time",
+    "Task",
+    "Obligations",
+    "Kind",
+    "Rationale",
+    "Alternative verification",
+    "Needs approval",
+    "Approved by",
+]
+EXPECTATIONS_HEADER = [
+    "ID",
+    "Time",
+    "Task",
+    "Files",
+    "Requirements",
+    "Justification",
+    "Alters behaviour",
+    "Approved by",
+    "New fingerprint",
+]
+DECISIONS_HEADER = ["ID", "Opened", "Question", "Tasks", "Status", "Answer", "Decided by", "Resolved"]
+# The record cells the check value is not computed over.
+UNCHAINED_CELLS = ("Classification", "Note", "Check")
+
+COMMAND_ID = re.compile(r"^[a-z0-9-]+$")
+OBLIGATION_ID = re.compile(r"^VO-\d{3,}$")
+TASK_LINE = re.compile(r"^\s*- \[([ xX])\] (T\d{3,})(?=\s|$)(.*)$")
+LABEL = re.compile(r"\s*\[([^\]]*)\]")
+STORY_HEADING = re.compile(r"^###\s+User Story\s+(\d+)\b")
+SCENARIOS_MARKER = re.compile(r"^\*\*Acceptance Scenarios\*\*")
+NUMBERED_ITEM = re.compile(r"^\d+\.\s")
+DEFINED_ID = re.compile(r"\*\*((?:FR|SC)-\d+)\*\*")
+
+
+class Item:
+    """A parsed row: plain attributes, no behaviour."""
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+
+def split_row(line):
+    """Split one Markdown table row into trimmed cells.
+
+    A vertical bar inside backticks, or escaped with a backslash, stays in its cell.
+    """
+    text = line.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    cells = []
+    current = []
+    in_code = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and text[index + 1 : index + 2] == "|":
+            current.append("|")
+            index += 2
+            continue
+        if char == "`":
+            in_code = not in_code
+        if char == "|" and not in_code:
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    if "".join(current).strip():
+        cells.append("".join(current).strip())
+    return cells
+
+
+def split_list(cell):
+    """Split a comma-separated cell. A lone ``-`` or an empty cell is no items."""
+    text = cell.strip()
+    if text in ("", "-"):
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def undash(cell):
+    """A cell containing only ``-`` is empty."""
+    text = cell.strip()
+    return "" if text == "-" else text
+
+
+def find_table(text, heading, header):
+    """Find a table by its heading and then its header row.
+
+    Returns ``(rows, None)`` with each row a list of cells, or ``(None, problem)``.
+    """
+    lines = text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.rstrip() == heading:
+            start = index + 1
+            break
+    if start is None:
+        return None, f"no heading '{heading}'"
+    while start < len(lines) and not lines[start].lstrip().startswith("|"):
+        if lines[start].startswith("#"):
+            return None, f"no table under '{heading}'"
+        start += 1
+    if start >= len(lines):
+        return None, f"no table under '{heading}'"
+    if split_row(lines[start]) != list(header):
+        return None, f"header row under '{heading}' is not | " + " | ".join(header) + " |"
+    rows = []
+    for line in lines[start + 1 :]:
+        if not line.lstrip().startswith("|"):
+            break
+        if re.match(r"^\s*\|[\s:|-]*$", line):
+            continue
+        rows.append(split_row(line))
+    return rows, None
+
+
+def read_table(text, heading, header, rule, subject, findings):
+    """Read a table as a list of ``{column: cell}``, adding findings for what is malformed."""
+    rows, problem = find_table(text, heading, header)
+    if problem is not None:
+        findings.append(Finding(rule, subject, problem))
+        return []
+    found = []
+    for number, cells in enumerate(rows, 1):
+        if len(cells) != len(header):
+            findings.append(
+                Finding(rule, subject, f"row {number} under '{heading}' has {len(cells)} cells, expected {len(header)}")
+            )
+            continue
+        found.append(dict(zip(header, cells)))
+    return found
+
+
+def check_enum(value, allowed, name, rule, subject, findings):
+    if value and value not in allowed:
+        findings.append(Finding(rule, subject, f"{name} '{value}' is not one of " + ", ".join(allowed)))
+
+
+def unique(values):
+    seen = []
+    for value in values:
+        if value not in seen:
+            seen.append(value)
+    return seen
+
+
+def parse_spec(text):
+    """Collect requirement ids and derive acceptance scenario ids from spec.md."""
+    fr_ids = []
+    sc_ids = []
+    scenario_ids = []
+    story = None
+    in_scenarios = False
+    count = 0
+    for line in text.splitlines():
+        for ident in DEFINED_ID.findall(line):
+            (fr_ids if ident.startswith("FR-") else sc_ids).append(ident)
+        heading = STORY_HEADING.match(line)
+        if heading:
+            story = heading.group(1)
+            in_scenarios = False
+            count = 0
+            continue
+        if line.startswith("#"):
+            story = None
+            in_scenarios = False
+            continue
+        if story is None:
+            continue
+        stripped = line.strip()
+        if SCENARIOS_MARKER.match(stripped):
+            in_scenarios = True
+            count = 0
+        elif in_scenarios and NUMBERED_ITEM.match(stripped):
+            count += 1
+            scenario_ids.append(f"US{story}-AS{count}")
+        elif in_scenarios and stripped and not line.startswith((" ", "\t")):
+            in_scenarios = False
+    return Item(fr_ids=unique(fr_ids), sc_ids=unique(sc_ids), scenario_ids=scenario_ids)
+
+
+def verification_plan_section(text):
+    """The text from the Verification Plan heading to the next heading of its level, or None."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.rstrip() == VERIFICATION_PLAN_HEADING:
+            end = len(lines)
+            for later in range(index + 1, len(lines)):
+                if re.match(r"^#{1,2}\s", lines[later]):
+                    end = later
+                    break
+            return "\n".join(lines[index:end])
+    return None
+
+
+def parse_plan(text):
+    """Read the Verification Plan section of plan.md with the element rules of the contract."""
+    findings = []
+    plan = Item(has_section=False, commands=[], obligations=[], exemptions=[], findings=findings)
+    section = verification_plan_section(text)
+    if section is None:
+        findings.append(
+            Finding("PLAN", PLAN_FILE, "no Verification Plan section: a gap to resolve in planning, by the plan stage")
+        )
+        return plan
+    plan.has_section = True
+
+    seen = set()
+    for row in read_table(section, COMMANDS_HEADING, COMMANDS_HEADER, "PLAN", PLAN_FILE, findings):
+        ident = row["ID"]
+        if not COMMAND_ID.match(ident):
+            findings.append(Finding("PLAN", ident, "command id must be lowercase letters, digits and hyphens"))
+        if ident in seen:
+            findings.append(Finding("PLAN", ident, "command id is used more than once"))
+        seen.add(ident)
+        command = row["Command"]
+        if len(command) >= 2 and command.startswith("`") and command.endswith("`"):
+            command = command.strip("`").strip()
+        else:
+            findings.append(Finding("PLAN", ident, "command must be written in backticks"))
+        if command.count("{select}") > 1:
+            findings.append(Finding("PLAN", ident, "command holds more than one {select}"))
+        check_enum(row["Scope"], SCOPES, "scope", "PLAN", ident, findings)
+        plan.commands.append(Item(id=ident, command=command, scope=row["Scope"], source=undash(row["Source"])))
+
+    seen = set()
+    for row in read_table(section, OBLIGATIONS_HEADING, OBLIGATIONS_HEADER, "PLAN", PLAN_FILE, findings):
+        ident = row["ID"]
+        if not OBLIGATION_ID.match(ident):
+            findings.append(Finding("PLAN", ident, "obligation id must be VO- and three or more digits"))
+        if ident in seen:
+            findings.append(Finding("PLAN", ident, "obligation id is used more than once"))
+        seen.add(ident)
+        check_enum(row["Level"], LEVELS, "level", "PLAN", ident, findings)
+        check_enum(row["Origin"], ORIGINS, "origin", "PLAN", ident, findings)
+        plan.obligations.append(
+            Item(
+                id=ident,
+                requirements=split_list(row["Requirements"]),
+                scenario=undash(row["Scenario"]),
+                outcome=undash(row["Expected outcome"]),
+                level=undash(row["Level"]),
+                origin=undash(row["Origin"]),
+            )
+        )
+
+    for row in read_table(section, EXEMPTIONS_HEADING, EXEMPTIONS_HEADER, "PLAN", PLAN_FILE, findings):
+        if row["Requirement"].lower() == "none":
+            continue
+        plan.exemptions.append(
+            Item(
+                requirement=row["Requirement"],
+                reason=undash(row["Reason"]),
+                alternative=undash(row["Alternative verification"]),
+            )
+        )
+    return plan
+
+
+def parse_tasks(text):
+    """Read task lines: id, checkbox, labels, and kind by the first-to-name rule."""
+    tasks = []
+    named = set()
+    for number, line in enumerate(text.splitlines(), 1):
+        found = TASK_LINE.match(line)
+        if not found:
+            continue
+        rest = found.group(3)
+        obligations = []
+        reason = ""
+        while True:
+            label = LABEL.match(rest)
+            if not label:
+                break
+            content = label.group(1).strip()
+            if OBLIGATION_ID.match(content):
+                obligations.append(content)
+            elif content.startswith("NT:"):
+                reason = content[3:].strip()
+            elif not re.match(r"^(P|US\d+)$", content):
+                break
+            rest = rest[label.end() :]
+        obligations = unique(obligations)
+        if obligations:
+            kind = "test" if not any(ident in named for ident in obligations) else "behaviour"
+            named.update(obligations)
+        elif reason:
+            kind = "no-test"
+        else:
+            kind = None
+        tasks.append(
+            Item(
+                id=found.group(2),
+                complete=found.group(1) != " ",
+                obligations=obligations,
+                no_test_reason=reason,
+                kind=kind,
+                line=number,
+                description=rest.strip(),
+            )
+        )
+    return tasks
+
+
+def yes_no(value, name, subject, findings):
+    if value not in ("yes", "no"):
+        findings.append(Finding("EVIDENCE", subject, f"{name} '{value}' is not one of yes, no"))
+    return value == "yes"
+
+
+def parse_evidence(text):
+    """Read every table of tdd-evidence.md."""
+    findings = []
+    evidence = Item(baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=findings)
+
+    for row in read_table(text, BASELINE_HEADING, BASELINE_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+        evidence.baseline.append(
+            Item(
+                seq=row["Seq"],
+                command=row["Command"],
+                result=row["Result"],
+                failures=undash(row["Pre-existing failures"]),
+            )
+        )
+
+    for row in read_table(text, RECORDS_HEADING, RECORDS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+        if not row["Seq"].isdigit():
+            findings.append(Finding("EVIDENCE", EVIDENCE_FILE, f"Seq '{row['Seq']}' is not a number"))
+            continue
+        subject = "#" + row["Seq"]
+        check_enum(row["Phase"], PHASES, "phase", "EVIDENCE", subject, findings)
+        check_enum(row["Result"], RESULTS, "result", "EVIDENCE", subject, findings)
+        classification = undash(row["Classification"])
+        check_enum(classification, CLASSIFICATIONS + ("unclassified",), "classification", "EVIDENCE", subject, findings)
+        evidence.records.append(
+            Item(
+                seq=int(row["Seq"]),
+                time=row["Time"],
+                task=undash(row["Task"]),
+                obligations=split_list(row["Obligations"]),
+                phase=row["Phase"],
+                command=row["Command"],
+                selector=undash(row["Selector"]),
+                result=row["Result"],
+                valid=yes_no(row["Valid"], "Valid", subject, findings),
+                classification=classification,
+                files=split_list(row["Files"]),
+                fingerprint=undash(row["Fingerprint"]),
+                note=undash(row["Note"]),
+                check=row["Check"],
+                cells=row,
+            )
+        )
+
+    for row in read_table(text, EXCEPTIONS_HEADING, EXCEPTIONS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+        check_enum(row["Kind"], EXCEPTION_KINDS, "kind", "EVIDENCE", row["ID"], findings)
+        evidence.exceptions.append(
+            Item(
+                id=row["ID"],
+                time=row["Time"],
+                task=undash(row["Task"]),
+                obligations=split_list(row["Obligations"]),
+                kind=row["Kind"],
+                rationale=undash(row["Rationale"]),
+                alternative=undash(row["Alternative verification"]),
+                needs_approval=yes_no(row["Needs approval"], "Needs approval", row["ID"], findings),
+                approved_by=undash(row["Approved by"]),
+            )
+        )
+
+    for row in read_table(text, EXPECTATIONS_HEADING, EXPECTATIONS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+        evidence.expectations.append(
+            Item(
+                id=row["ID"],
+                time=row["Time"],
+                task=undash(row["Task"]),
+                files=split_list(row["Files"]),
+                requirements=split_list(row["Requirements"]),
+                justification=undash(row["Justification"]),
+                alters_behaviour=yes_no(row["Alters behaviour"], "Alters behaviour", row["ID"], findings),
+                approved_by=undash(row["Approved by"]),
+                new_fingerprint=undash(row["New fingerprint"]),
+            )
+        )
+
+    for row in read_table(text, DECISIONS_HEADING, DECISIONS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+        check_enum(row["Status"], ("open", "resolved"), "status", "EVIDENCE", row["ID"], findings)
+        evidence.decisions.append(
+            Item(
+                id=row["ID"],
+                opened=row["Opened"],
+                question=undash(row["Question"]),
+                tasks=split_list(row["Tasks"]),
+                status=row["Status"],
+                answer=undash(row["Answer"]),
+                decided_by=undash(row["Decided by"]),
+                resolved=undash(row["Resolved"]),
+            )
+        )
+    return evidence
 
 
 # ---------------------------------------------------------------------------
