@@ -553,6 +553,172 @@ def parse_evidence(text):
 
 
 # ---------------------------------------------------------------------------
+# Loading a feature's artefacts
+# ---------------------------------------------------------------------------
+
+SPEC_FILE = "spec.md"
+
+
+def read_text(path):
+    """The file's text, or None when it does not exist."""
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def require_text(feature_dir, name):
+    try:
+        text = read_text(os.path.join(feature_dir, name))
+    except (OSError, UnicodeDecodeError) as error:
+        raise UsageError(f"cannot read {name}: {error}") from error
+    if text is None:
+        raise UsageError(f"cannot read {name}: no such file in the feature directory")
+    return text
+
+
+def load_plan(feature_dir):
+    """The parsed Verification Plan. A missing plan.md is a plan with no section."""
+    try:
+        text = read_text(os.path.join(feature_dir, PLAN_FILE))
+    except (OSError, UnicodeDecodeError) as error:
+        raise UsageError(f"cannot read {PLAN_FILE}: {error}") from error
+    return parse_plan(text or "")
+
+
+# ---------------------------------------------------------------------------
+# Trace checks: plan (C1) and tasks (G1, C2, C3)
+# ---------------------------------------------------------------------------
+
+SCENARIO_ID = re.compile(r"^US\d+-AS\d+$")
+LOOKED_UP_ID = re.compile(r"^(FR|SC)-\d+$")
+ASSIGNED_ID = re.compile(r"^(DC|EC)-\w+$")
+
+
+def requirement_problem(ident, spec):
+    """Why a requirement id is not acceptable, or None."""
+    if LOOKED_UP_ID.match(ident):
+        known = spec.fr_ids if ident.startswith("FR-") else spec.sc_ids
+        return None if ident in known else "is not in spec.md"
+    if SCENARIO_ID.match(ident):
+        return None if ident in spec.scenario_ids else "is not in spec.md"
+    if ASSIGNED_ID.match(ident):
+        return None
+    return "has an unknown prefix (expected FR-, SC-, USn-ASm, DC- or EC-)"
+
+
+def check_plan(spec, plan):
+    """Findings for the Verification Plan against spec.md."""
+    if not plan.has_section:
+        return list(plan.findings)
+    findings = list(plan.findings)
+    if not plan.commands and not any(COMMANDS_HEADING in finding.reason for finding in findings):
+        findings.append(
+            Finding("PLAN", PLAN_FILE, "no verification command is declared: a gap to resolve in planning")
+        )
+    for obligation in plan.obligations:
+        if not obligation.requirements:
+            findings.append(Finding("PLAN", obligation.id, "names no requirement"))
+        for name, value in (
+            ("scenario", obligation.scenario),
+            ("expected outcome", obligation.outcome),
+            ("level", obligation.level),
+        ):
+            if not value:
+                findings.append(Finding("PLAN", obligation.id, f"{name} is empty"))
+        for ident in obligation.requirements:
+            problem = requirement_problem(ident, spec)
+            if problem:
+                findings.append(Finding("PLAN", obligation.id, f"requirement {ident} {problem}"))
+    for exemption in plan.exemptions:
+        if not exemption.reason:
+            findings.append(Finding("PLAN", exemption.requirement, "exemption reason is empty"))
+        problem = requirement_problem(exemption.requirement, spec)
+        if problem:
+            findings.append(Finding("PLAN", exemption.requirement, f"exempted requirement {problem}"))
+    findings.extend(rule_c1(spec, plan))
+    return findings
+
+
+def rule_c1(spec, plan):
+    """Every FR- requirement and every acceptance scenario has an obligation or an exemption."""
+    covered = {exemption.requirement for exemption in plan.exemptions}
+    for obligation in plan.obligations:
+        covered.update(obligation.requirements)
+    return [
+        Finding("C1", ident, "no obligation and no exemption")
+        for ident in spec.fr_ids + spec.scenario_ids
+        if ident not in covered
+    ]
+
+
+def rule_g1(task):
+    """The task carries a [VO-nnn] or [NT: reason] label."""
+    if task.kind is None:
+        return [Finding("G1", task.id, "no [VO-nnn] or [NT: reason] label")]
+    return []
+
+
+def unknown_obligations(plan, tasks):
+    known = {obligation.id for obligation in plan.obligations}
+    return [
+        Finding("TASKS", task.id, f"obligation {ident} is not in the plan")
+        for task in tasks
+        for ident in task.obligations
+        if ident not in known
+    ]
+
+
+def rule_c2_c3(plan, tasks):
+    """Each obligation has a test task and a behaviour task (C2), the test task first (C3)."""
+    findings = []
+    for obligation in plan.obligations:
+        namers = [task for task in tasks if obligation.id in task.obligations]
+        if not namers:
+            findings.append(Finding("C2", obligation.id, "no task names it"))
+        elif namers[0].kind != "test":
+            findings.append(
+                Finding(
+                    "C3",
+                    obligation.id,
+                    f"its first task {namers[0].id} is a behaviour task, so no test task comes before it",
+                )
+            )
+        elif len(namers) == 1:
+            findings.append(
+                Finding("C2", obligation.id, f"named by a test task ({namers[0].id}) but by no behaviour task")
+            )
+    return findings
+
+
+def check_tasks(plan, tasks):
+    """Findings for tasks.md against the Verification Plan."""
+    if not plan.has_section:
+        return list(plan.findings)
+    findings = []
+    for task in tasks:
+        findings.extend(rule_g1(task))
+    findings.extend(unknown_obligations(plan, tasks))
+    findings.extend(rule_c2_c3(plan, tasks))
+    return findings
+
+
+def verdict(name, findings):
+    """Exit code and heading line for a check."""
+    if not findings:
+        return EXIT_OK, [f"{name}: passed"]
+    noun = "finding" if len(findings) == 1 else "findings"
+    return EXIT_FAIL, [f"{name}: failed, {len(findings)} {noun}"]
+
+
+def cmd_plan(args, root, feature_dir):
+    spec = parse_spec(require_text(feature_dir, SPEC_FILE))
+    findings = check_plan(spec, load_plan(feature_dir))
+    code, lines = verdict("plan", findings)
+    return code, findings, lines, None
+
+
+# ---------------------------------------------------------------------------
 # hook: the runtime event handler
 # ---------------------------------------------------------------------------
 
@@ -713,7 +879,9 @@ def build_parser():
 
 # Subcommand handlers take (args, root, feature_dir) and return
 # (exit code, findings, lines of text, extra fields for --json).
-HANDLERS = {}
+HANDLERS = {
+    "plan": cmd_plan,
+}
 
 
 def emit(args, code, findings=(), lines=(), extra=None, error=None):

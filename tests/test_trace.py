@@ -80,7 +80,8 @@ class PlanCheckTests(TraceCase):
     def test_empty_scenario_and_level_fail(self):
         root = self.repo("valid-minimal")
         plan = read(self.feature(root), "plan.md")
-        plan = plan.replace("| An empty cart is totalled |", "| - |").replace("| integration | planned |", "| | planned |")
+        plan = plan.replace("| An empty cart is totalled |", "| - |")
+        plan = plan.replace("| integration | planned |", "| | planned |")
         write(self.feature(root), ["plan.md"], plan)
         result = self.check(["plan"], root)
         self.assertEqual(result.code, 1)

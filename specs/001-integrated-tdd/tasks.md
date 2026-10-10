@@ -133,7 +133,7 @@ other command was run
 
 ### Implementation for User Story 1
 
-- [ ] T030 [US1] Implement the `plan` subcommand in `scripts/python/tdd_check.py` (trace checks: section and commands table present, C1, complete obligations and exemptions, known requirement ids) so T027 passes
+- [X] T030 [US1] Implement the `plan` subcommand in `scripts/python/tdd_check.py` (trace checks: section and commands table present, C1, complete obligations and exemptions, known requirement ids) so T027 passes
 - [ ] T031 [US1] Implement the `tasks` subcommand in `scripts/python/tdd_check.py` (G1, known obligations, C2, C3) so T028 passes
 - [ ] T032 [P] [US1] Write `preset/templates/plan-addendum.md`: the Verification Plan section with its three tables and header rows from contract section 1, short guidance comments on each column, and the statement that the section holds no status
 - [ ] T033 [P] [US1] Write `preset/templates/tasks-addendum.md`: the label conventions and kind rules from contract section 2 with the three example task lines, and the statements that test tasks are required for behaviour and that every obligation needs a `test` task and at least one `behaviour` task, and the statement that the first task to name an obligation is its test task whatever its description says, so the test task must be written first
