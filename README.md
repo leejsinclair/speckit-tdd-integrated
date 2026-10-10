@@ -1,6 +1,5 @@
 # speckit-tdd-integrated
 
-
 ## Documentation
 
 - [Spec Kit overview](speckit-overview.md) — background on GitHub Spec Kit, its customisation architecture (presets, extensions, workflows, bundles), how customisations should be tested, and the project direction.

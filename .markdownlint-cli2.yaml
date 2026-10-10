@@ -1,0 +1,15 @@
+# Lints the repository's own Markdown. Spec Kit's installed files and the
+# background notes written before this project had a linter are left out.
+globs:
+  - "**/*.md"
+ignores:
+  - ".specify/**"
+  - ".claude/**"
+  - "node_modules/**"
+  - "speckit-overview.md"
+config:
+  # Prose is wrapped by hand at about 90 columns and tables are not wrapped.
+  MD013: false
+  # The design documents under specs/ use compact table rows and bare URLs.
+  MD060: false
+  MD034: false

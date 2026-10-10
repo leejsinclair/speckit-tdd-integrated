@@ -60,12 +60,12 @@ tested on its own.
 
 **Purpose**: Repository layout and tooling
 
-- [ ] T001 Create the directories `commands/`, `templates/`, `scripts/python/`, `preset/commands/`, `preset/templates/`, `tests/fixtures/features/`, `tests/fixtures/payloads/`, `tests/fixtures/bin/`, `examples/stories/`, `examples/runs/compliant/`, `examples/runs/tests-only/` and `docs/` at the repository root, as plan.md Project Structure lists them
-- [ ] T002 [P] Create `ruff.toml` with `target-version = "py39"`, and exclude `.specify/`, `.claude/` and `examples/`
-- [ ] T003 [P] Create `.markdownlint-cli2.yaml` that lints the repository's Markdown, ignores `.specify/`, `.claude/` and `node_modules/`, and is configured so the existing documents under `specs/001-integrated-tdd/` pass unchanged
-- [ ] T004 [P] Create `LICENSE` (MIT, Lee Sinclair, 2026) and `CHANGELOG.md` with an Unreleased section for version 0.1.0
-- [ ] T006 Create `tests/support.py` with helpers that copy a fixture feature directory into a temporary repository root (with a `.specify/feature.json` pointing at it), run `scripts/python/tdd_check.py` as a subprocess with given arguments, standard input and environment, and return exit code, standard output and standard error
-- [ ] T007 [P] Create `tests/fixtures/bin/fake_test.sh`, a framework-neutral stand-in for a project's test command: it takes one selector argument and, by selector, exits 0 printing `ok`, exits 1 printing `AssertionError: expected 0 got None`, exits 1 printing `ModuleNotFoundError: no module named cart`, sleeps past a short timeout, or prints 60 numbered lines before exiting 1
+- [X] T001 Create the directories `commands/`, `templates/`, `scripts/python/`, `preset/commands/`, `preset/templates/`, `tests/fixtures/features/`, `tests/fixtures/payloads/`, `tests/fixtures/bin/`, `examples/stories/`, `examples/runs/compliant/`, `examples/runs/tests-only/` and `docs/` at the repository root, as plan.md Project Structure lists them
+- [X] T002 [P] Create `ruff.toml` with `target-version = "py39"`, and exclude `.specify/`, `.claude/` and `examples/`
+- [X] T003 [P] Create `.markdownlint-cli2.yaml` that lints the repository's Markdown, ignores `.specify/`, `.claude/` and `node_modules/`, and is configured so the existing documents under `specs/001-integrated-tdd/` pass unchanged
+- [X] T004 [P] Create `LICENSE` (MIT, Lee Sinclair, 2026) and `CHANGELOG.md` with an Unreleased section for version 0.1.0
+- [X] T006 Create `tests/support.py` with helpers that copy a fixture feature directory into a temporary repository root (with a `.specify/feature.json` pointing at it), run `scripts/python/tdd_check.py` as a subprocess with given arguments, standard input and environment, and return exit code, standard output and standard error
+- [X] T007 [P] Create `tests/fixtures/bin/fake_test.sh`, a framework-neutral stand-in for a project's test command: it takes one selector argument and, by selector, exits 0 printing `ok`, exits 1 printing `AssertionError: expected 0 got None`, exits 1 printing `ModuleNotFoundError: no module named cart`, sleeps past a short timeout, or prints 60 numbered lines before exiting 1
 
 ---
 
