@@ -294,3 +294,19 @@ Two things follow:
   obligation and task is the fix if a project reaches that size.
 
 A run of the `plan` check against 100,000 and 400,000 obligations was not made.
+
+### Python 3.9 and scenario 1 (T084, T085, 2026-10-10)
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Suite on the oldest supported interpreter | `uv run --python 3.9 python -B -m unittest discover -s tests` (CPython 3.9.25) | 380 tests, OK. No change to the script or the tests was needed |
+| Suite on the development interpreter | `python3 -B -m unittest discover -s tests` (CPython 3.14.7) | 380 tests, OK |
+| Python lint | `uvx ruff check .` | All checks passed |
+| Markdown lint | `npx -y markdownlint-cli2` | 0 issues |
+
+Scenario 1's table of areas is covered as follows: parsing (`test_parsing.py`), `plan` and
+`tasks` (`test_trace.py`), `run` and the ledger (`test_run.py`), the gate (`test_gate.py`),
+the hook (`test_hook.py`), status and the Summary (`test_status.py`), compliance and the
+two example runs (`test_compliance.py`), manifests, wrappers and templates
+(`test_manifests.py`), the common command line and the standard-library-only rule
+(`test_cli.py`) and the time limits (`test_performance.py`).
