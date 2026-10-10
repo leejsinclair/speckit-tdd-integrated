@@ -175,5 +175,30 @@ Follow "Failures, exceptions and decisions" in the process rules. In this stage:
    decision, with the tasks held back. Never describe such work as verified, and leave its
    tasks unmarked.
 
+### End-of-stage report
+
+After `gate --all`, print the review view and report from it:
+
+```bash
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py status
+```
+
+In the Completion Report, in addition to what the core command asks for:
+
+- State what is verified and what is not, and why, obligation by obligation as `status`
+  shows it.
+- List every blocked or failed item, every exception, every expectation change and every
+  open decision, with the tasks held back. List any change made to an existing test file,
+  with its reason.
+- State plainly that passing tests do not show that requirements listed as not verified
+  are met.
+- State that passing tests do not stand in for linting, static analysis, security checks
+  or any other validation the project requires: those are run and reported as the project
+  already requires.
+- Point the reviewer to `tdd-evidence.md` in the feature directory.
+
+Do not describe the stage as complete while `gate --all` exits non-zero or while an
+obligation is planned or in progress: say what remains.
+
 Routine cycles involve no approval request to the developer. Never edit `tdd-evidence.md`
 directly, and never copy test output into the artefacts.
