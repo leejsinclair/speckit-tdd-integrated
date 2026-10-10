@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "PreToolUse",
+  "cwd": "{ROOT}",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "{ROOT}/src/notes.txt",
+    "old_string": "one",
+    "new_string": "two"
+  }
+}

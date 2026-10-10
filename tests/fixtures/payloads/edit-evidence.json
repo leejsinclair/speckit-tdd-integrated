@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "PreToolUse",
+  "cwd": "{ROOT}",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "{ROOT}/specs/001-demo/tdd-evidence.md",
+    "old_string": "| fail |",
+    "new_string": "| pass |"
+  }
+}
