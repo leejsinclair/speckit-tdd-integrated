@@ -406,3 +406,16 @@ implementation, and each has a fallback.
 | How the project's test commands are known | D7 |
 | Name of the evidence document | `tdd-evidence.md` (D9) |
 | Testing approach for this project | D10, and the four levels in the constitution mapped in [quickstart.md](./quickstart.md) |
+
+## Installation test results
+
+Outcomes of the installation tests for assumptions A1 to A9. Each was run in a throwaway
+project outside this repository, with Spec Kit CLI 1.0.2.dev0 and Claude Code 2.1.296 on
+Linux.
+
+| # | Date | What was run | What was observed | Result |
+|---|------|--------------|-------------------|--------|
+| A1 | 2026-10-10 | `specify init <tmp>/proj --integration claude`, `specify extension add --dev <repo>`, a demo feature `specs/001-demo/` whose `plan.md` holds a `## Verification Plan` heading, then `claude -p` asked to change `specs/001-demo/tdd-evidence.md` with Edit and with Write | Both tool calls were refused and the file was unchanged. The agent was shown the handler's standard error in full, prefixed `PreToolUse:Edit hook error:` and the dispatcher's command line. MultiEdit is not a tool in this Claude Code version, so it could not be tried | Confirmed |
+| A2 | 2026-10-10 | Same test. The handler file `commands/speckit.integrated-tdd.gate.md` is not listed under `provides.commands` | The dispatcher found the file by its stem and ran it. Installation printed an empty "Provided commands" list, and the listing of `.claude/skills` was identical before and after | Confirmed |
+| A3 | 2026-10-10 | Same test. The project's script type is `sh` (`.specify/init-options.json`) and the handler declares only `py:` | The handler ran under the dispatcher's own Python interpreter | Confirmed |
+| A7 | 2026-10-10 | A second, temporary `PreToolUse` hook in `.claude/settings.local.json` copied its standard input and working directory to files. Claude Code was asked to tick tasks in `specs/001-demo/tasks.md` with Edit and with Write and to edit `src/notes.txt` | Working directory: the project root. Payload keys: `cwd`, `effort`, `hook_event_name`, `permission_mode`, `prompt_id`, `session_id`, `tool_input`, `tool_name`, `tool_use_id`, `transcript_path`. `tool_input` for Edit: `file_path` (absolute), `old_string`, `new_string`, `replace_all`. For Write: `file_path` (absolute), `content`. The edits to `tasks.md` and the unrelated file succeeded, as the handler allows them at this stage | Confirmed. `file_path` is absolute; the adapter accepts absolute and relative paths |

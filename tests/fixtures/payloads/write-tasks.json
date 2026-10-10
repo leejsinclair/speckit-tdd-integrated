@@ -1,0 +1,17 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "{ROOT}/transcript.jsonl",
+  "cwd": "{ROOT}",
+  "prompt_id": "00000000-0000-0000-0000-000000000000",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "{ROOT}/specs/001-demo/tasks.md",
+    "content": "# Tasks: demo\n\n- [X] T001 [NT: demo note only] Write a note in src/notes.txt\n- [X] T002 [NT: demo note only] Write a second note in src/notes.txt\n- [ ] T003 [NT: demo note only] Write a third note in src/notes.txt\n"
+  },
+  "tool_use_id": "toolu_recorded"
+}
