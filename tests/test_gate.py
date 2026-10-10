@@ -1,0 +1,168 @@
+"""The task gate, rules G1 to G9 (data-model.md, The task gate)."""
+
+import json
+import os
+import unittest
+
+from support import RepoCase, snapshot
+
+
+class GateCase(RepoCase):
+    def gate(self, fixture, *args):
+        root = self.repo(fixture)
+        return self.check(["gate"] + list(args), root)
+
+    def assert_passes(self, fixture, task):
+        result = self.gate(fixture, "--task", task)
+        self.assertEqual((result.code, result.out, result.err), (0, f"gate {task}: passed\n", ""), result)
+
+    def assert_fails(self, fixture, task, *findings):
+        result = self.gate(fixture, "--task", task)
+        self.assertEqual(result.code, 1, result)
+        lines = result.out.splitlines()
+        noun = "finding" if len(findings) == 1 else "findings"
+        self.assertEqual(lines, [f"gate {task}: failed, {len(findings)} {noun}"] + list(findings))
+
+
+class FirstRulesTests(GateCase):
+    """G1, G3, G4 and G9, one failing and one passing fixture each."""
+
+    def test_g1_fails_for_a_task_without_a_label(self):
+        self.assert_fails("gate-g1-fail", "T015", "G1 T015: no [VO-nnn] or [NT: reason] label")
+
+    def test_g1_passes_for_a_no_test_task(self):
+        self.assert_passes("gate-g1-pass", "T015")
+
+    def test_g3_fails_without_a_valid_failing_first_record(self):
+        self.assert_fails(
+            "gate-g3-fail", "T011", "G3 T011 VO-001: no valid failing-first record and no exception"
+        )
+
+    def test_g3_fails_with_no_evidence_document_at_all(self):
+        root = self.repo("gate-g3-pass")
+        os.remove(os.path.join(self.feature(root), "tdd-evidence.md"))
+        result = self.check(["gate", "--task", "T011"], root)
+        self.assertEqual(result.code, 1)
+        self.assertIn("G3 T011 VO-001: no valid failing-first record and no exception", result.out)
+
+    def test_a_test_task_passes_with_a_valid_red_record_alone(self):
+        self.assert_passes("gate-g3-pass", "T011")
+
+    def test_g4_fails_without_a_passing_record_after_the_failing_first_record(self):
+        self.assert_fails(
+            "gate-g4-fail", "T012", "G4 T012 VO-001: no valid passing record after its failing-first record"
+        )
+
+    def test_a_behaviour_task_with_no_evidence_fails_g3_and_g4(self):
+        self.assert_fails(
+            "gate-g4-pass",
+            "T014",
+            "G3 T014 VO-002: no valid failing-first record and no exception",
+            "G4 T014 VO-002: no valid passing record after its failing-first record",
+        )
+
+    def test_g4_passes_with_red_then_green(self):
+        self.assert_passes("gate-g4-pass", "T012")
+
+    def test_g9_fails_for_a_record_made_with_an_undeclared_command(self):
+        self.assert_fails("gate-g9-fail", "T012", "G9 T012 #3: command 'adhoc' is not declared in the plan")
+
+    def test_g9_passes_when_every_record_used_a_declared_command(self):
+        self.assert_passes("gate-g9-pass", "T012")
+
+    def test_a_no_test_task_passes_g3_and_g4(self):
+        self.assert_passes("gate-all-fail", "T015")
+
+
+class GateUsageTests(GateCase):
+    def test_unknown_task_is_a_usage_error(self):
+        result = self.gate("gate-g4-pass", "--task", "T099")
+        self.assertEqual(result.code, 2)
+        self.assertIn("task T099 is not in tasks.md", result.err)
+
+    def test_a_feature_without_a_verification_plan_fails_with_the_gap(self):
+        result = self.gate("plan-no-section", "--task", "T011")
+        self.assertEqual(result.code, 1)
+        self.assertIn("PLAN plan.md: no Verification Plan section", result.out)
+
+    def test_malformed_evidence_fails_the_gate(self):
+        result = self.gate("parse-evidence-wrong-header", "--task", "T012")
+        self.assertEqual(result.code, 1)
+        self.assertIn("EVIDENCE tdd-evidence.md: header row under '## Test execution records'", result.out)
+
+    def test_json_carries_the_findings(self):
+        result = self.gate("gate-g4-fail", "--task", "T012", "--json")
+        data = json.loads(result.out)
+        self.assertEqual(data["exit_code"], 1)
+        self.assertEqual(
+            data["findings"],
+            [
+                {
+                    "rule": "G4",
+                    "subject": "T012 VO-001",
+                    "reason": "no valid passing record after its failing-first record",
+                }
+            ],
+        )
+
+    def test_output_is_identical_on_two_runs(self):
+        root = self.repo("gate-all-fail")
+        first = self.check(["gate", "--all"], root)
+        second = self.check(["gate", "--all"], root)
+        self.assertEqual((first.code, first.out, first.err), (second.code, second.out, second.err))
+
+    def test_gate_creates_or_changes_no_file(self):
+        root = self.repo("gate-all-fail")
+        before = snapshot(root)
+        self.check(["gate", "--all"], root)
+        self.check(["gate", "--task", "T012"], root)
+        self.assertEqual(snapshot(root), before)
+
+
+class GateAllTests(GateCase):
+    def test_all_applies_the_rules_to_completed_tasks(self):
+        result = self.gate("gate-all-fail", "--all")
+        self.assertEqual(result.code, 1, result)
+        lines = result.out.splitlines()
+        self.assertEqual(
+            lines[:3],
+            [
+                "gate: failed, 2 findings",
+                "G3 T014 VO-002: no valid failing-first record and no exception",
+                "G4 T014 VO-002: no valid passing record after its failing-first record",
+            ],
+        )
+
+    def test_all_passes_when_every_completed_task_passes(self):
+        result = self.gate("gate-all-pass", "--all")
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(result.out.splitlines()[0], "gate: passed, 3 completed tasks")
+
+    def test_all_reports_incomplete_tasks_without_failing_on_them(self):
+        result = self.gate("gate-all-pass", "--all")
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(
+            result.out.splitlines()[1:],
+            [
+                "Incomplete tasks:",
+                "T013 would not pass: G3 T013 VO-002: no valid failing-first record and no exception",
+                "T014 would not pass: G3 T014 VO-002: no valid failing-first record and no exception; "
+                "G4 T014 VO-002: no valid passing record after its failing-first record",
+            ],
+        )
+
+    def test_an_incomplete_task_that_would_pass_is_reported_as_such(self):
+        result = self.gate("gate-g4-fail", "--all")
+        self.assertIn("T015 would pass", result.out.splitlines())
+
+    def test_all_json_lists_incomplete_tasks(self):
+        result = self.gate("gate-all-pass", "--all", "--json")
+        data = json.loads(result.out)
+        self.assertEqual(data["exit_code"], 0)
+        self.assertEqual([item["task"] for item in data["incomplete"]], ["T013", "T014"])
+        self.assertFalse(data["incomplete"][0]["would_pass"])
+        self.assertEqual(data["incomplete"][0]["findings"][0]["rule"], "G3")
+
+
+if __name__ == "__main__":
+    unittest.main()
