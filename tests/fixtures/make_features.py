@@ -496,6 +496,82 @@ def _tasks_behaviour_before_test():
 
 
 # ---------------------------------------------------------------------------
+# Gate cases for G1, G3, G4 and G9 (T041). Every check chain is valid.
+# ---------------------------------------------------------------------------
+
+
+def done(tasks, *idents):
+    """Mark the named tasks complete."""
+    for ident in idents:
+        tasks = swap(tasks, f"- [ ] {ident} ", f"- [X] {ident} ")
+    return tasks
+
+
+RED_1 = red("T011", "VO-001")
+GREEN_1 = green("T012", "VO-001")
+RED_2 = red("T013", "VO-002")
+GREEN_2 = green("T014", "VO-002")
+FIRST_CYCLE = [baseline(), RED_1, GREEN_1]
+BOTH_CYCLES = [baseline(), RED_1, GREEN_1, RED_2, GREEN_2, checkpoint()]
+
+
+@case("gate-g1-fail")
+def _gate_g1_fail():
+    tasks = swap(TASKS, "T015 [US1] [NT: README wording only] Document", "T015 [US1] Document")
+    return variant(tasks=done(tasks, "T015"), evidence=evidence([baseline()]))
+
+
+@case("gate-g1-pass")
+def _gate_g1_pass():
+    return variant(tasks=done(TASKS, "T015"), evidence=evidence([baseline()]))
+
+
+@case("gate-g3-fail")
+def _gate_g3_fail():
+    # The only red run passed on first run, so it is not a valid failing-first record.
+    invalid = rec("T011", "VO-001", "red", "unit", "pass", "pass", "no", "-", "tests/test_cart.py", FP_A,
+                  "passed on first run: investigate")  # fmt: skip
+    return variant(tasks=done(TASKS, "T011"), evidence=evidence([baseline(), invalid]))
+
+
+@case("gate-g3-pass")
+def _gate_g3_pass():
+    return variant(tasks=done(TASKS, "T011"), evidence=evidence([baseline(), RED_1]))
+
+
+@case("gate-g4-fail")
+def _gate_g4_fail():
+    # The passing run came before the failing-first run, and none follows it.
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence([baseline(), GREEN_1, RED_1]))
+
+
+@case("gate-g4-pass")
+def _gate_g4_pass():
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(FIRST_CYCLE))
+
+
+@case("gate-g9-fail")
+def _gate_g9_fail():
+    undeclared = green("T012", "VO-001", command="adhoc")
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence([baseline(), RED_1, undeclared]))
+
+
+@case("gate-g9-pass")
+def _gate_g9_pass():
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(FIRST_CYCLE))
+
+
+@case("gate-all-pass")
+def _gate_all_pass():
+    return variant(tasks=done(TASKS, "T011", "T012", "T015"), evidence=evidence(FIRST_CYCLE))
+
+
+@case("gate-all-fail")
+def _gate_all_fail():
+    return variant(tasks=done(TASKS, "T011", "T012", "T014", "T015"), evidence=evidence(FIRST_CYCLE))
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
