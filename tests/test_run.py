@@ -401,5 +401,198 @@ class LedgerTests(RunCase):
         self.assertLess(abs(time.time() - recorded), 120)
 
 
+XC_HEADING = "## Expectation changes"
+TWO_OBLIGATION_TASKS = (
+    "- [ ] T001 [VO-001] Write the first test\n"
+    "- [ ] T002 [VO-002] Write the second test\n"
+    "- [ ] T003 [VO-001] [VO-002] Implement both\n"
+)
+
+
+class FingerprintReuseTests(RunCase):
+    """green and refactor read the test files back from the obligation's failing-first record."""
+
+    def setUp(self):
+        super().setUp()
+        self.baseline()
+        self.assertEqual(self.red().code, 0)
+        self.red_row = records(self.root)[-1]
+
+    def test_green_takes_files_from_the_red_record_made_on_the_test_task(self):
+        self.assertEqual(self.red_row["Task"], "T011")
+        self.assertEqual(self.green().code, 0)
+        row = records(self.root)[-1]
+        self.assertEqual(row["Task"], "T012")
+        self.assertEqual(row["Files"], "tests/test_cart.py")
+        self.assertEqual(row["Fingerprint"], self.red_row["Fingerprint"])
+
+    def test_refactor_takes_files_from_the_red_record(self):
+        self.green()
+        self.run_phase("refactor", "unit", "--select", "pass", "--task", "T012", "--vo", "VO-001")
+        row = records(self.root)[-1]
+        self.assertEqual((row["Phase"], row["Files"]), ("refactor", "tests/test_cart.py"))
+        self.assertEqual(row["Fingerprint"], self.red_row["Fingerprint"])
+
+    def test_a_changed_test_file_gives_a_different_fingerprint_on_the_green_row(self):
+        write(self.root, ["tests", "test_cart.py"], "assert True\n")
+        self.green()
+        row = records(self.root)[-1]
+        self.assertEqual(row["Files"], "tests/test_cart.py")
+        self.assertNotEqual(row["Fingerprint"], self.red_row["Fingerprint"])
+        self.assertEqual(row["Fingerprint"], fingerprint({"tests/test_cart.py": b"assert True\n"}))
+
+    def test_a_deleted_test_file_gives_a_different_fingerprint_on_the_green_row(self):
+        os.remove(os.path.join(self.root, "tests", "test_cart.py"))
+        self.green()
+        row = records(self.root)[-1]
+        self.assertEqual(row["Fingerprint"], fingerprint({"tests/test_cart.py": None}))
+        self.assertNotEqual(row["Fingerprint"], self.red_row["Fingerprint"])
+
+    def test_the_latest_valid_red_record_is_the_one_used(self):
+        write(self.root, ["tests", "test_other.py"], "assert False\n")
+        self.run_phase(
+            "red", "unit", "--select", "assert", "--task", "T011", "--vo", "VO-001",
+            "--tests", "tests/test_other.py", "--expect", "AssertionError"
+        )  # fmt: skip
+        self.red(select="pass")  # recorded, not valid, so it is not the one used
+        self.green()
+        self.assertEqual(records(self.root)[-1]["Files"], "tests/test_other.py")
+
+    def test_tests_given_to_green_are_used_as_given(self):
+        write(self.root, ["tests", "test_other.py"], "assert False\n")
+        self.green(extra=["--tests", "tests/test_other.py"])
+        self.assertEqual(records(self.root)[-1]["Files"], "tests/test_other.py")
+
+    def test_with_no_valid_red_record_nothing_is_fingerprinted(self):
+        self.run_phase("green", "unit", "--select", "pass", "--task", "T014", "--vo", "VO-002")
+        row = records(self.root)[-1]
+        self.assertEqual((row["Files"], row["Fingerprint"]), ("-", "-"))
+
+
+class SeveralObligationsTests(RunCase):
+    def setUp(self):
+        super().setUp()
+        write(self.feature(self.root), ["tasks.md"], TWO_OBLIGATION_TASKS)
+        write(self.root, ["tests", "test_other.py"], "assert False\n")
+        self.baseline()
+
+    def red_for(self, task, vo, path):
+        result = self.run_phase(
+            "red", "unit", "--select", "assert", "--task", task, "--vo", vo,
+            "--tests", path, "--expect", "AssertionError"
+        )  # fmt: skip
+        self.assertEqual(result.code, 0, result)
+
+    def green_both(self):
+        return self.run_phase("green", "unit", "--select", "pass", "--task", "T003", "--vo", "VO-001", "VO-002")
+
+    def test_obligations_whose_red_records_list_different_files_are_refused(self):
+        self.red_for("T001", "VO-001", "tests/test_cart.py")
+        self.red_for("T002", "VO-002", "tests/test_other.py")
+        before = records(self.root)
+        result = self.green_both()
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("list different files", result.err)
+        self.assertIn("run them separately", result.err)
+        self.assertEqual(records(self.root), before)
+
+    def test_obligations_whose_red_records_list_the_same_files_are_accepted(self):
+        self.red_for("T001", "VO-001", "tests/test_cart.py")
+        self.red_for("T002", "VO-002", "tests/test_cart.py")
+        self.assertEqual(self.green_both().code, 0)
+        self.assertEqual(records(self.root)[-1]["Files"], "tests/test_cart.py")
+
+    def test_an_obligation_without_a_red_record_does_not_conflict(self):
+        self.red_for("T001", "VO-001", "tests/test_cart.py")
+        self.assertEqual(self.green_both().code, 0)
+        self.assertEqual(records(self.root)[-1]["Files"], "tests/test_cart.py")
+
+
+class ExpectationTests(RunCase):
+    def setUp(self):
+        super().setUp()
+        self.baseline()
+        self.red()
+        write(self.root, ["tests", "test_cart.py"], "assert total([]) == 0.0\n")
+
+    def expectation(self, *extra, task="T012"):
+        return self.check(
+            ["expectation", "--task", task, "--tests", "tests/test_cart.py", "--justification", "The total is a float"]
+            + list(extra),
+            self.root,
+        )
+
+    def changes(self):
+        return table_rows(evidence_text(self.root), XC_HEADING)
+
+    def test_expectation_appends_a_row(self):
+        result = self.expectation("--requirement", "FR-001", "US1-AS1")
+        self.assertEqual((result.code, result.out), (0, "recorded XC-01 for T012\n"), result)
+        (row,) = self.changes()
+        self.assertRegex(row["Time"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        del row["Time"]
+        self.assertEqual(
+            row,
+            {
+                "ID": "XC-01",
+                "Task": "T012",
+                "Files": "tests/test_cart.py",
+                "Requirements": "FR-001, US1-AS1",
+                "Justification": "The total is a float",
+                "Alters behaviour": "no",
+                "Approved by": "-",
+                "New fingerprint": fingerprint({"tests/test_cart.py": b"assert total([]) == 0.0\n"}),
+            },
+        )
+
+    def test_ids_count_up_and_flags_are_recorded(self):
+        self.expectation("--requirement", "FR-001")
+        self.expectation("--requirement", "FR-001", "--alters-behaviour", "--approved-by", "Lee Sinclair")
+        rows = self.changes()
+        self.assertEqual([row["ID"] for row in rows], ["XC-01", "XC-02"])
+        self.assertEqual((rows[1]["Alters behaviour"], rows[1]["Approved by"]), ("yes", "Lee Sinclair"))
+
+    def test_expectation_without_a_requirement_exits_2(self):
+        result = self.expectation()
+        self.assertEqual(result.code, 2)
+        self.assertIn("--requirement", result.err)
+        self.assertEqual(self.changes(), [])
+
+    def test_expectation_for_an_unknown_task_exits_2(self):
+        result = self.expectation("--requirement", "FR-001", task="T099")
+        self.assertEqual(result.code, 2)
+        self.assertIn("task T099 is not in tasks.md", result.err)
+        self.assertEqual(self.changes(), [])
+
+    def test_approve_fills_approved_by(self):
+        self.expectation("--requirement", "FR-001", "--alters-behaviour")
+        result = self.check(["approve", "--id", "XC-01", "--by", "Lee Sinclair"], self.root)
+        self.assertEqual((result.code, result.out), (0, "recorded approval of XC-01 by Lee Sinclair\n"), result)
+        self.assertEqual(self.changes()[0]["Approved by"], "Lee Sinclair")
+
+    def test_approve_for_an_unknown_id_exits_2(self):
+        self.expectation("--requirement", "FR-001")
+        before = evidence_text(self.root)
+        for ident in ("XC-09", "ZZ-01"):
+            result = self.check(["approve", "--id", ident, "--by", "Lee"], self.root)
+            self.assertEqual(result.code, 2, ident)
+            self.assertIn(f"no entry {ident}", result.err)
+        self.assertEqual(evidence_text(self.root), before)
+
+    def test_records_are_untouched_by_expectation_and_approve(self):
+        before = records(self.root)
+        self.expectation("--requirement", "FR-001", "--alters-behaviour")
+        self.check(["approve", "--id", "XC-01", "--by", "Lee"], self.root)
+        self.assertEqual(records(self.root), before)
+
+    def test_only_the_evidence_document_is_created_or_changed(self):
+        before = snapshot(self.root)
+        self.expectation("--requirement", "FR-001", "--alters-behaviour")
+        self.check(["approve", "--id", "XC-01", "--by", "Lee"], self.root)
+        after = snapshot(self.root)
+        self.assertEqual({name for name in after if before.get(name) != after[name]}, {EVIDENCE_REL})
+        self.assertEqual(set(before) - set(after), set())
+
+
 if __name__ == "__main__":
     unittest.main()
