@@ -360,3 +360,51 @@ Result:
   where the placeholder files complete the packages, and the ledger tests of T040 first
   pass at the runner commit (T047), not at the ledger commit (T046): the ledger has no
   caller until `run` exists.
+
+### Agent-driven runs with Haiku (T086 in part, T088, 2026-10-10)
+
+**This is not the run T086 specifies.** T086 asks for 13 runs by a person in three
+projects, each taking a story through all six commands. What was run instead, to keep the
+cost down, is four runs with `claude -p --model haiku` as the coding agent, through four of
+the six commands (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
+`/speckit-implement`; no `/speckit-clarify` or `/speckit-analyze`), non-interactively, so
+no approval request was possible and SC-007 was not exercised. Stories 02 to 06 were not
+run, and no third project was tried. T086 and T087 (a person reading the evidence against
+the two-minute limit, SC-005) are not done.
+
+| Run | Project | Story | Verdict | Obligations | Exceptions | Expectation changes |
+|-----|---------|-------|---------|-------------|------------|---------------------|
+| 1 | Python, `unittest`, `make test` | 01 normal development | `COMPLIANT` | 11 | 4 (3 `no-meaningful-red`, 1 `behaviour-preserving`) | 0 |
+| 2 | Node, `node --test`, `npm test` | 01 normal development | `COMPLIANT` | 12 | 7 (6 `no-meaningful-red`, 1 `behaviour-preserving`) | 0 |
+| 3 | Python | 07 small, low-risk change | `COMPLIANT` | 4, with 3 exemptions | 1 | 2 |
+| 4 (after the correction below) | Python | 07 small, low-risk change | `COMPLIANT` | 3, with 1 exemption | 0 | 0 |
+
+What was observed:
+
+- The plan's verification commands were each project's own, taken from its README
+  (`make test` and `python3 -m unittest {select}`; `npm test` and
+  `node --test test/cart.test.js`), in two languages and two test frameworks.
+- In every run `git status` showed only source and test files changed in the project, and
+  the evidence came from real runs through the script. No test, lint or CI configuration
+  was touched.
+- **Proportion was not met.** Story 01 (three requirements, a handful of scenarios) got 11
+  and 12 obligations. Story 07's expected outcome is one obligation per requirement and
+  acceptance scenario and no more; run 3 had 4 plus 3 exemptions.
+- **Most obligations were covered by exceptions, not by a failing run.** The first
+  implementation Haiku wrote was general, so later tests passed at once, and the agent
+  recorded `no-meaningful-red` with that reason. The records were honest and visible, and a
+  reviewer can read them, but little real Red was shown.
+- **Expectation changes were noise.** In run 3 two tests were added to the test file after
+  the first Red run, which changed the fingerprint of the file, and two Expectation Changes
+  followed, justified as additions with no assertion changed.
+- Run 3 also wrote a test asserting that the string `USD` appears nowhere in a source file.
+  The script cannot judge that kind of assertion; it is what a reviewer is for (FR-030).
+
+Correction (T088): `templates/tdd-process-rules.md` and the plan wrapper were changed to
+(a) write no more obligations than the requirements and scenarios need, with the small
+change spelt out, (b) make the minimum change for the current test so that the next test is
+seen to fail, and (c) add the next obligation's test after the current one is green, or
+record the file change as a correction. Story 07 was rerun (run 4): 3 obligations,
+1 exemption, no exception, no expectation change, `COMPLIANT`. That is better and not
+yet one per requirement and scenario, and one rerun on one model is not a result about the
+change in general.
