@@ -151,6 +151,20 @@ These are limits of the first release. None is presented as covered.
 - **Windows is untested.**
 - **No bundle.** The two packages are installed by two commands.
 
+## Releasing
+
+Both manifests declare the version; the tag must match (`v0.1.0` for `0.1.0`). Pushing a tag
+runs `.github/workflows/release.yml`, which builds the zip and attaches it to a GitHub
+release. The same zip can be built locally from any tag, local or on GitHub:
+
+```bash
+tools/release-zip.sh v0.1.0        # writes dist/speckit-tdd-integrated-0.1.0.zip
+```
+
+The script refuses a tag whose manifests declare another version. The zip holds only the
+files not marked `export-ignore` in `.gitattributes`, which is what GitHub's own tag archive
+holds too, so the install URLs under Install work with either.
+
 ## Development
 
 ```bash
