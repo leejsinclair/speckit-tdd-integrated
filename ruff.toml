@@ -1,2 +1,14 @@
 target-version = "py39"
+line-length = 110
 extend-exclude = [".specify", ".claude", "examples"]
+
+[lint]
+# Stated here so the result does not depend on the ruff version's defaults.
+select = ["E", "F", "W", "I", "UP", "B", "PL", "EXE"]
+ignore = [
+    "PLR0911", # many returns: the gate and hook decide case by case
+    "PLR0912", # many branches
+    "PLR0913", # many arguments
+    "PLR0915", # many statements
+    "PLR2004", # small literal numbers in tests
+]
