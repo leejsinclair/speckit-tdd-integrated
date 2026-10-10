@@ -100,5 +100,31 @@ this stage comes from `CHECK run`.
 
    Every completed task must pass. Resolve each finding before reporting completion.
 
+### A test changed after its Red run
+
+When `gate` reports **G5** for a task, a test file differs between the failing-first run
+and the passing run. Do not change the test back and forth to clear the finding, and do
+not weaken it to pass.
+
+1. Decide what the change is. A **correction** brings the test into line with the approved
+   requirements. Otherwise it **alters intended behaviour**.
+2. Record it, naming the requirement it is justified against:
+
+   ```bash
+   python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py expectation --task <task id> \
+       --tests <test file> --requirement <requirement id> --justification "<why>" [--alters-behaviour]
+   ```
+
+3. Where it alters intended behaviour, explain the change to the developer and ask for
+   approval. Record the approval only after the developer has given it in the
+   conversation, with the developer's name:
+
+   ```bash
+   python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py approve --id <XC-nn> --by "<name>"
+   ```
+
+   Until then the task stays incomplete (G8). Continue with tasks that do not depend on
+   it.
+
 Routine cycles involve no approval request to the developer. Never edit `tdd-evidence.md`
 directly, and never copy test output into the artefacts.
