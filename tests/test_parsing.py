@@ -1,0 +1,299 @@
+"""The artefact parser (contracts/artefact-formats.md).
+
+Malformed input is reported as findings and never raises.
+"""
+
+import unittest
+
+from support import fixture_text, load_script
+
+
+def parser_function(name):
+    module = load_script()
+    function = getattr(module, name, None)
+    if function is None:
+        raise AssertionError("the check script has no parser function " + name)
+    return function
+
+
+def parse(name, case, filename):
+    return parser_function(name)(fixture_text(case, filename))
+
+
+def reasons(findings):
+    return [str(finding) for finding in findings]
+
+
+class TableTests(unittest.TestCase):
+    TEXT = (
+        "## Things\n\nSome prose.\n\n"
+        "|  ID | Name  |\n|-----|-------|\n|  a  |  one, two ,three |\n| b | - |\n| c | `x | y` |\n\n"
+        "After.\n\n## Other\n\n| ID | Name |\n|----|------|\n| z | last |\n"
+    )
+
+    def test_table_is_found_by_heading_then_header_row(self):
+        rows, problem = parser_function("find_table")(self.TEXT, "## Things", ["ID", "Name"])
+        self.assertIsNone(problem)
+        self.assertEqual([row[0] for row in rows], ["a", "b", "c"])
+
+    def test_cells_are_trimmed(self):
+        rows, _problem = parser_function("find_table")(self.TEXT, "## Things", ["ID", "Name"])
+        self.assertEqual(rows[0], ["a", "one, two ,three"])
+
+    def test_a_bar_inside_backticks_does_not_split_the_cell(self):
+        rows, _problem = parser_function("find_table")(self.TEXT, "## Things", ["ID", "Name"])
+        self.assertEqual(rows[2], ["c", "`x | y`"])
+
+    def test_comma_lists_split_and_a_lone_dash_is_empty(self):
+        split_list = parser_function("split_list")
+        self.assertEqual(split_list("one, two ,three"), ["one", "two", "three"])
+        self.assertEqual(split_list("-"), [])
+        self.assertEqual(split_list(""), [])
+
+    def test_missing_heading_is_a_problem_not_an_error(self):
+        rows, problem = parser_function("find_table")(self.TEXT, "## Absent", ["ID", "Name"])
+        self.assertIsNone(rows)
+        self.assertIn("## Absent", problem)
+
+    def test_wrong_header_row_is_a_problem(self):
+        rows, problem = parser_function("find_table")(self.TEXT, "## Things", ["ID", "Title"])
+        self.assertIsNone(rows)
+        self.assertIn("header row", problem)
+
+    def test_a_table_under_a_later_heading_is_not_taken(self):
+        text = "## Things\n\nNo table here.\n\n## Other\n\n| ID | Name |\n|----|------|\n| z | last |\n"
+        rows, problem = parser_function("find_table")(text, "## Things", ["ID", "Name"])
+        self.assertIsNone(rows)
+        self.assertIn("no table", problem)
+
+
+class SpecTests(unittest.TestCase):
+    def test_requirement_ids_are_collected(self):
+        spec = parse("parse_spec", "valid-minimal", "spec.md")
+        self.assertEqual(spec.fr_ids, ["FR-001", "FR-002", "FR-003"])
+        self.assertEqual(spec.sc_ids, ["SC-001"])
+
+    def test_scenario_ids_are_derived_from_story_and_position(self):
+        spec = parse("parse_spec", "valid-minimal", "spec.md")
+        self.assertEqual(spec.scenario_ids, ["US1-AS1", "US1-AS2"])
+
+    def test_scenarios_of_several_stories(self):
+        text = (
+            "### User Story 1 - First (Priority: P1)\n\n**Acceptance Scenarios**:\n\n"
+            "1. **Given** a, **When** b, **Then** c.\n1. **Given** d, **When** e, **Then** f.\n\n---\n\n"
+            "### User Story 2 - Second (Priority: P2)\n\nProse with 1. a number.\n\n"
+            "**Acceptance Scenarios**:\n\n1. **Given** g, **When** h, **Then** i.\n\n"
+            "### Edge Cases\n\n1. Not a scenario.\n"
+        )
+        spec = parser_function("parse_spec")(text)
+        self.assertEqual(spec.scenario_ids, ["US1-AS1", "US1-AS2", "US2-AS1"])
+
+    def test_an_id_only_mentioned_in_prose_is_not_a_requirement(self):
+        text = "- **FR-001**: The system MUST do a thing, as FR-009 once said.\n"
+        self.assertEqual(parser_function("parse_spec")(text).fr_ids, ["FR-001"])
+
+
+class PlanTests(unittest.TestCase):
+    def test_commands_are_read(self):
+        plan = parse("parse_plan", "valid-minimal", "plan.md")
+        self.assertTrue(plan.has_section)
+        self.assertEqual(plan.findings, [])
+        self.assertEqual([command.id for command in plan.commands], ["unit", "suite"])
+        unit = plan.commands[0]
+        self.assertEqual(unit.command, "sh tests/fixtures/bin/fake_test.sh {select}")
+        self.assertEqual(unit.scope, "focused")
+        self.assertEqual(unit.source, "tests/fixtures/bin")
+        self.assertEqual(plan.commands[1].scope, "broad")
+
+    def test_obligations_are_read(self):
+        plan = parse("parse_plan", "valid-minimal", "plan.md")
+        self.assertEqual([item.id for item in plan.obligations], ["VO-001", "VO-002"])
+        second = plan.obligations[1]
+        self.assertEqual(second.requirements, ["FR-002", "US1-AS2", "SC-001", "DC-01", "EC-01"])
+        self.assertEqual(second.scenario, "A cart with a zero-priced item is totalled through the public interface")
+        self.assertEqual(second.outcome, "The total is the sum of the prices")
+        self.assertEqual(second.level, "integration")
+        self.assertEqual(second.origin, "planned")
+
+    def test_exemptions_are_read(self):
+        plan = parse("parse_plan", "valid-minimal", "plan.md")
+        self.assertEqual(len(plan.exemptions), 1)
+        exemption = plan.exemptions[0]
+        self.assertEqual(exemption.requirement, "FR-003")
+        self.assertIn("Visual layout", exemption.reason)
+        self.assertIn("code review", exemption.alternative)
+
+    def test_a_none_row_means_no_exemptions(self):
+        plan = parse("parse_plan", "parse-no-exemptions", "plan.md")
+        self.assertEqual(plan.exemptions, [])
+        self.assertEqual(plan.findings, [])
+
+    def test_missing_section_is_a_finding(self):
+        plan = parse("parse_plan", "parse-no-section", "plan.md")
+        self.assertFalse(plan.has_section)
+        self.assertEqual(plan.commands, [])
+        self.assertEqual(len(plan.findings), 1)
+        self.assertIn("no Verification Plan section", str(plan.findings[0]))
+
+    def test_wrong_header_row_is_a_finding(self):
+        plan = parse("parse_plan", "parse-wrong-header", "plan.md")
+        self.assertTrue(plan.has_section)
+        self.assertEqual(plan.commands, [])
+        found = reasons(plan.findings)
+        self.assertEqual(len(found), 1)
+        self.assertIn("### Verification commands", found[0])
+        self.assertIn("header row", found[0])
+        self.assertEqual(len(plan.obligations), 2)
+
+    def test_out_of_range_enums_are_findings(self):
+        plan = parse("parse_plan", "parse-bad-enum", "plan.md")
+        found = "\n".join(reasons(plan.findings))
+        self.assertIn("unit: scope 'wide' is not one of focused, broad", found)
+        self.assertIn("VO-001: level 'smoke' is not one of unit, integration, contract, end-to-end, other", found)
+        self.assertIn("VO-002: origin 'guessed' is not one of planned, discovered", found)
+        self.assertEqual(len(plan.findings), 3)
+
+    def test_id_and_command_rules_are_findings(self):
+        plan = parse("parse_plan", "parse-bad-ids", "plan.md")
+        found = "\n".join(reasons(plan.findings))
+        self.assertIn("Unit_1: command id must be lowercase letters, digits and hyphens", found)
+        self.assertIn("suite: command holds more than one {select}", found)
+        self.assertIn("VO-001: obligation id is used more than once", found)
+        self.assertIn("VO-3: obligation id must be VO- and three or more digits", found)
+
+    def test_a_command_outside_backticks_is_a_finding(self):
+        plan = parse("parse_plan", "parse-unquoted-command", "plan.md")
+        self.assertIn("suite: command must be written in backticks", "\n".join(reasons(plan.findings)))
+
+    def test_findings_use_the_plan_rule_id(self):
+        plan = parse("parse_plan", "parse-bad-enum", "plan.md")
+        self.assertTrue(all(str(finding).startswith("PLAN ") for finding in plan.findings))
+
+
+class TaskTests(unittest.TestCase):
+    def tasks(self):
+        return {task.id: task for task in parse("parse_tasks", "parse-task-labels", "tasks.md")}
+
+    def test_task_lines_yield_id_and_order(self):
+        tasks = parse("parse_tasks", "parse-task-labels", "tasks.md")
+        self.assertEqual([task.id for task in tasks], ["T00%d" % n for n in range(1, 9)])
+
+    def test_checkbox_states(self):
+        tasks = self.tasks()
+        self.assertFalse(tasks["T001"].complete)
+        self.assertTrue(tasks["T002"].complete)
+        self.assertTrue(tasks["T003"].complete)
+
+    def test_labels_are_read_from_the_run_before_the_description(self):
+        tasks = self.tasks()
+        self.assertEqual(tasks["T002"].obligations, ["VO-001", "VO-002"])
+        self.assertEqual(tasks["T008"].obligations, ["VO-001"])
+        self.assertEqual(tasks["T007"].no_test_reason, "configuration with no observable effect")
+        self.assertEqual(tasks["T007"].obligations, [])
+
+    def test_kind_follows_labels_and_position(self):
+        tasks = self.tasks()
+        self.assertIsNone(tasks["T001"].kind)
+        self.assertEqual(tasks["T002"].kind, "test")
+        self.assertEqual(tasks["T003"].kind, "behaviour")
+        self.assertEqual(tasks["T005"].kind, "behaviour")
+        self.assertEqual(tasks["T007"].kind, "no-test")
+        self.assertEqual(tasks["T008"].kind, "behaviour")
+
+    def test_several_obligations_first_to_name_only_some_is_behaviour(self):
+        self.assertEqual(self.tasks()["T004"].kind, "behaviour")
+
+    def test_an_empty_no_test_reason_is_no_label(self):
+        task = self.tasks()["T006"]
+        self.assertIsNone(task.kind)
+        self.assertEqual(task.no_test_reason, "")
+
+    def test_valid_minimal_kinds(self):
+        tasks = parse("parse_tasks", "valid-minimal", "tasks.md")
+        self.assertEqual(
+            [(task.id, task.kind) for task in tasks],
+            [("T011", "test"), ("T012", "behaviour"), ("T013", "test"), ("T014", "behaviour"), ("T015", "no-test")],
+        )
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_records_are_read(self):
+        evidence = parse("parse_evidence", "valid-minimal", "tdd-evidence.md")
+        self.assertEqual(evidence.findings, [])
+        self.assertEqual([record.seq for record in evidence.records], [1, 2, 3])
+        red = evidence.records[1]
+        self.assertEqual(red.task, "T011")
+        self.assertEqual(red.obligations, ["VO-001"])
+        self.assertEqual(red.phase, "red")
+        self.assertEqual(red.command, "unit")
+        self.assertEqual(red.selector, "assert")
+        self.assertEqual(red.result, "fail")
+        self.assertTrue(red.valid)
+        self.assertEqual(red.classification, "assertion")
+        self.assertEqual(red.files, ["tests/test_cart.py"])
+        self.assertEqual(len(red.fingerprint), 6)
+        self.assertEqual(red.note, "expected: AssertionError")
+        self.assertEqual(len(red.check), 6)
+
+    def test_empty_cells_are_empty_values(self):
+        first = parse("parse_evidence", "valid-minimal", "tdd-evidence.md").records[0]
+        self.assertEqual(first.task, "")
+        self.assertEqual(first.obligations, [])
+        self.assertEqual(first.selector, "")
+        self.assertEqual(first.classification, "")
+        self.assertEqual(first.files, [])
+        self.assertEqual(first.fingerprint, "")
+        self.assertEqual(first.note, "")
+
+    def test_every_evidence_table_is_read(self):
+        evidence = parse("parse_evidence", "parse-evidence-full", "tdd-evidence.md")
+        self.assertEqual(evidence.findings, [])
+        self.assertEqual(len(evidence.records), 4)
+        self.assertFalse(evidence.records[3].valid)
+        self.assertEqual(len(evidence.baseline), 1)
+        exception = evidence.exceptions[0]
+        self.assertEqual(
+            (exception.id, exception.task, exception.obligations, exception.kind),
+            ("EX-01", "T013", ["VO-002"], "legacy"),
+        )
+        self.assertTrue(exception.needs_approval)
+        self.assertEqual(exception.approved_by, "Lee Sinclair")
+        self.assertEqual(exception.alternative, "Existing suite run before and after")
+        change = evidence.expectations[0]
+        self.assertEqual((change.id, change.task, change.requirements), ("XC-01", "T012", ["FR-001", "US1-AS1"]))
+        self.assertTrue(change.alters_behaviour)
+        self.assertEqual(len(change.new_fingerprint), 6)
+        self.assertEqual([item.id for item in evidence.decisions], ["DN-01", "DN-02"])
+        self.assertEqual(evidence.decisions[0].tasks, ["T013", "T014"])
+        self.assertEqual(evidence.decisions[0].status, "open")
+        self.assertEqual(evidence.decisions[1].decided_by, "Lee")
+
+    def test_wrong_header_row_is_a_finding(self):
+        evidence = parse("parse_evidence", "parse-evidence-wrong-header", "tdd-evidence.md")
+        self.assertEqual(evidence.records, [])
+        found = reasons(evidence.findings)
+        self.assertEqual(len(found), 1)
+        self.assertIn("## Test execution records", found[0])
+        self.assertTrue(found[0].startswith("EVIDENCE "))
+
+    def test_bad_cells_are_findings(self):
+        evidence = parse("parse_evidence", "parse-evidence-bad-row", "tdd-evidence.md")
+        found = "\n".join(reasons(evidence.findings))
+        self.assertIn("phase 'purple' is not one of baseline, red, green, refactor, checkpoint", found)
+        self.assertIn("Seq 'three' is not a number", found)
+
+    def test_malformed_text_never_raises(self):
+        for name in ("parse_spec", "parse_plan", "parse_tasks", "parse_evidence"):
+            function = parser_function(name)
+            for text in ("", "|", "## Verification Plan", "| a |\n|---|\n| b | c | d |\n", "- [ ] T001 [NT: unclosed"):
+                function(text)
+
+    def test_a_row_with_the_wrong_number_of_cells_is_a_finding(self):
+        text = fixture_text("valid-minimal", "plan.md").replace("| broad | tests/fixtures/bin |", "| broad |")
+        plan = parser_function("parse_plan")(text)
+        self.assertIn("has 3 cells, expected 4", "\n".join(reasons(plan.findings)))
+        self.assertEqual([command.id for command in plan.commands], ["unit"])
+
+
+if __name__ == "__main__":
+    unittest.main()

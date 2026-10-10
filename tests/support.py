@@ -126,3 +126,24 @@ class RepoCase(unittest.TestCase):
 
     def check(self, args, root, **kwargs):
         return run_check(args, root, **kwargs)
+
+
+def load_script():
+    """Import the check script as a module, for tests of its parsing functions.
+
+    The parser has no subcommand of its own, so its tests call it directly.
+    Every other test drives the script as a subprocess.
+    """
+    import importlib.util  # noqa: PLC0415
+
+    if not os.path.isfile(SCRIPT):
+        raise AssertionError("check script not found: scripts/python/tdd_check.py")
+    spec = importlib.util.spec_from_file_location("tdd_check", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def fixture_text(case, name):
+    with open(os.path.join(FEATURES, case, name)) as handle:
+        return handle.read()
