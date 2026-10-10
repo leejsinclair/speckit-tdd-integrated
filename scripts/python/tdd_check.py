@@ -1112,6 +1112,144 @@ def cmd_tasks(args, root, feature_dir):
 
 
 # ---------------------------------------------------------------------------
+# The task gate (data-model.md). One function per rule, each taking the task
+# and the parsed artefacts, so that a rule can be added without changing others.
+# ---------------------------------------------------------------------------
+
+
+def load_feature(feature_dir, tasks=None):
+    """The plan, the task list and the evidence of a feature, parsed."""
+    try:
+        plan = load_plan(feature_dir)
+        if tasks is None:
+            tasks = parse_tasks(require_text(feature_dir, TASKS_FILE))
+        evidence = load_evidence(feature_dir)
+    except (OSError, UnicodeDecodeError) as error:
+        raise UsageError(f"cannot read the feature's artefacts: {error}") from error
+    return Item(dir=feature_dir, plan=plan, tasks=tasks, evidence=evidence)
+
+
+def unreadable(feature):
+    """Findings that stop the gate before any rule is applied: no plan section, malformed evidence."""
+    if not feature.plan.has_section:
+        return list(feature.plan.findings)
+    return list(feature.evidence.findings)
+
+
+def counts(record):
+    """Whether a record counts as evidence for its phase. An unreliable record never does."""
+    return record.valid and record.classification != "unreliable"
+
+
+def records_of(feature, obligation, phase=None):
+    return [
+        record
+        for record in feature.evidence.records
+        if obligation in record.obligations and (phase is None or record.phase == phase)
+    ]
+
+
+def latest_red(feature, obligation):
+    """The latest valid failing-first record of an obligation, whichever task it was made on."""
+    found = [record for record in records_of(feature, obligation, "red") if counts(record)]
+    return found[-1] if found else None
+
+
+def gate_g1(task, feature):
+    return rule_g1(task)
+
+
+def gate_g3(task, feature):
+    """Each obligation on a test or behaviour task has a valid failing-first record."""
+    return [
+        Finding("G3", f"{task.id} {obligation}", "no valid failing-first record and no exception")
+        for obligation in task.obligations
+        if latest_red(feature, obligation) is None
+    ]
+
+
+def gate_g4(task, feature):
+    """Each obligation on a behaviour task has a valid passing record after its failing-first record."""
+    if task.kind != "behaviour":
+        return []
+    findings = []
+    for obligation in task.obligations:
+        red = latest_red(feature, obligation)
+        after = red.seq if red else 0
+        greens = [
+            record for record in records_of(feature, obligation, "green") if counts(record) and record.seq > after
+        ]
+        if not greens:
+            findings.append(
+                Finding("G4", f"{task.id} {obligation}", "no valid passing record after its failing-first record")
+            )
+    return findings
+
+
+def gate_g9(task, feature):
+    """Every record for the task used a declared Verification Command."""
+    declared = {command.id for command in feature.plan.commands}
+    return [
+        Finding("G9", f"{task.id} #{record.seq}", f"command '{record.command}' is not declared in the plan")
+        for record in feature.evidence.records
+        if record.task == task.id and record.command not in declared
+    ]
+
+
+# In rule order. Later rules are added here.
+GATE_RULES = [gate_g1, gate_g3, gate_g4, gate_g9]
+
+
+def gate_task(task, feature):
+    """Findings of every gate rule for one task."""
+    findings = []
+    for rule in GATE_RULES:
+        findings.extend(rule(task, feature))
+    return findings
+
+
+def plural(count, noun):
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def cmd_gate(args, root, feature_dir):
+    feature = load_feature(feature_dir)
+    blocked = unreadable(feature)
+    if args.task:
+        task = find_task(feature.tasks, args.task)
+        findings = blocked or gate_task(task, feature)
+        code, lines = verdict(f"gate {task.id}", findings)
+        return code, findings, lines, None
+    if blocked:
+        code, lines = verdict("gate", blocked)
+        return code, blocked, lines, None
+
+    completed = [task for task in feature.tasks if task.complete]
+    findings = []
+    for task in completed:
+        findings.extend(gate_task(task, feature))
+    code, lines = verdict("gate", findings)
+    if code == EXIT_OK:
+        lines = ["gate: passed, " + plural(len(completed), "completed task")]
+    # Incomplete tasks are reported, and never fail the gate.
+    incomplete = []
+    for task in feature.tasks:
+        if task.complete:
+            continue
+        would = gate_task(task, feature)
+        incomplete.append(
+            {"task": task.id, "would_pass": not would, "findings": [finding.as_dict() for finding in would]}
+        )
+        if not would:
+            lines.append(f"{task.id} would pass")
+        else:
+            lines.append(f"{task.id} would not pass: " + "; ".join(str(finding) for finding in would))
+    if incomplete:
+        lines.insert(1, "Incomplete tasks:")
+    return code, findings, lines, {"incomplete": incomplete}
+
+
+# ---------------------------------------------------------------------------
 # hook: the runtime event handler
 # ---------------------------------------------------------------------------
 
@@ -1276,6 +1414,7 @@ HANDLERS = {
     "plan": cmd_plan,
     "tasks": cmd_tasks,
     "run": cmd_run,
+    "gate": cmd_gate,
 }
 
 
