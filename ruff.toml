@@ -13,3 +13,7 @@ ignore = [
     "PLR0917", # many positional arguments
     "PLR2004", # small literal numbers in tests
 ]
+
+[lint.per-file-ignores]
+# Fixture text is written out as it appears in the Markdown tables.
+"tests/fixtures/make_features.py" = ["E501"]
