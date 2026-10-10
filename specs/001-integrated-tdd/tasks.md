@@ -169,7 +169,7 @@ only then, and the `hook` refuses the `[ ]` to `[X]` edit before then
 
 ### Implementation for User Story 2
 
-- [ ] T045 [P] [US2] Write `templates/tdd-evidence-template.md` as contract section 3 defines the empty document
+- [X] T045 [P] [US2] Write `templates/tdd-evidence-template.md` as contract section 3 defines the empty document
 - [ ] T046 [US2] Implement the evidence ledger in `scripts/python/tdd_check.py`: create from the template, append a record row with sequence, UTC time, fingerprint and chained check value, sanitise cell text, write the Baseline row for `baseline` records, and rewrite the Summary section through one function that for now writes the generated-on line only (US5 fills it)
 - [ ] T047 [US2] Implement the command runner and the `run` subcommand in `scripts/python/tdd_check.py`: option validation, the baseline-first rule, `{select}` substitution, execution through the shell from the repository root with the timeout, validity per phase, the notes for invalid `red` runs, the last 40 lines to the caller, and exit codes. Makes T039 and T040 pass
 - [ ] T048 [US2] Implement gate rules G1, G3, G4 and G9 and the `gate --task` and `gate --all` subcommands in `scripts/python/tdd_check.py`, with each rule a separate function taking the parsed artefacts so later stories add rules without changing these. Makes T042 pass
