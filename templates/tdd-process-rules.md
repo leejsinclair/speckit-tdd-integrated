@@ -78,6 +78,58 @@ verified.
 
 ## The Red, Green, Refactor cycle
 
+Implementation proceeds one behaviour at a time. Every result comes from the check
+script's `run` subcommand, which executes one of the plan's declared verification commands,
+judges the outcome by exit status and expected text, and writes the record itself.
+
+```text
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py run \
+    --phase <baseline|red|green|refactor|checkpoint> --command <command id> \
+    [--select <selector>] [--task <task id>] [--vo <obligation id> ...] \
+    [--tests <test file> ...] [--expect <text>] [--note <text>]
+```
+
+**Before the first task.** Record a `baseline` with a `broad` command, so that tests
+already failing before this feature are known and kept apart from failures the work
+introduces. Name the failing tests with `--note`. No other run is accepted until a
+baseline exists.
+
+**For each behaviour, in this order.**
+
+1. **Write the test first.** Create or update the test for the behaviour before any of
+   its implementation (FR-017). This is the obligation's test task.
+2. **Red.** State in advance the text the failure should show, then run the test with
+   `--phase red`, the test task, the obligation, the test files (`--tests`) and that text
+   (`--expect`). Proceed only when the record is valid: the run failed and its output
+   held the expected text (FR-018).
+   - A test that passes on its first run is not a Red step. Investigate: the behaviour may
+     already exist, or the test may not exercise it.
+   - A test that fails for another reason, such as a missing import or a mistake in the
+     test, is not a Red step either. Correct the test and run `red` again.
+3. **Green.** Make the minimum change that satisfies the failing test (FR-019), then run
+   it with `--phase green` on the behaviour task (FR-020).
+4. **Refactor.** Tidy the code while the tests stay passing, and run the affected tests
+   with `--phase refactor` afterwards (FR-021). Where there is nothing to tidy, there is
+   nothing to run.
+
+**Rules that hold throughout.**
+
+- Never state that a test failed or passed unless `run` recorded it. "It should pass" is
+  not a result (FR-022).
+- Work in small increments, and verify each one before starting work that depends on it
+  (FR-024). Tests are run throughout and never left to the end (FR-025).
+- Select the existing tests that cover the area being changed and run them alongside the
+  new one, so that a regression shows at once (FR-027).
+- Run a `broad` command as a `checkpoint` at the end of each phase of the task list, and
+  not after every change (FR-028).
+- When a run fails, resolve the failure before starting dependent work (FR-026). The
+  section on failures says how.
+- Before marking a task complete, run `gate --task <task id>`. The edit that marks a task
+  `[X]` is refused while its gate fails. Never edit `tdd-evidence.md`: only the script
+  writes it.
+- A routine cycle involves no approval request (FR-053). Ask the developer only for what
+  the sections on test integrity and on failures, exceptions and decisions name.
+
 ## Test integrity
 
 ## Failures, exceptions and decisions
