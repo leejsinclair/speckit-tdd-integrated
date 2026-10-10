@@ -690,7 +690,7 @@ def open_ledger(feature_dir):
     except (OSError, UnicodeDecodeError) as error:
         raise UsageError(f"cannot read {EVIDENCE_FILE}: {error}") from error
     if evidence.findings:
-        raise UsageError(f"{EVIDENCE_FILE} is malformed, nothing was recorded: {evidence.findings[0].reason}")
+        raise UsageError(f"{EVIDENCE_FILE} is malformed: {evidence.findings[0].reason}")
     return evidence
 
 
@@ -732,16 +732,17 @@ def baseline_rows(evidence):
 
 def summary_body(feature_dir, evidence):
     """The Summary below its generated-on line. Derived only from plan.md and the tables."""
-    return ""
+    plan = load_plan(feature_dir)
+    if not plan.has_section:
+        return ""
+    tasks = parse_tasks(read_text(os.path.join(feature_dir, TASKS_FILE)) or "")
+    feature = Item(dir=feature_dir, plan=plan, tasks=tasks, evidence=evidence)
+    return "\n".join(view_lines(review_view(feature))) + "\n"
 
 
 def render_evidence(feature_dir, evidence, now):
-    body = summary_body(feature_dir, evidence)
-    summary = f"_Generated from the tables below on {now}._\n" + ("\n" + body if body else "")
-    return (
-        preamble(feature_dir, evidence)
-        + SUMMARY_HEADING + "\n\n" + summary + "\n"
-        + BASELINE_HEADING + "\n\n" + render_table(BASELINE_HEADER, baseline_rows(evidence)) + "\n"
+    tables = (
+        BASELINE_HEADING + "\n\n" + render_table(BASELINE_HEADER, baseline_rows(evidence)) + "\n"
         + RECORDS_HEADING + "\n\n" + render_table(RECORDS_HEADER, [item.cells for item in evidence.records]) + "\n"
         + EXCEPTIONS_HEADING + "\n\n"
         + render_table(EXCEPTIONS_HEADER, [item.cells for item in evidence.exceptions]) + "\n"
@@ -749,6 +750,10 @@ def render_evidence(feature_dir, evidence, now):
         + render_table(EXPECTATIONS_HEADER, [item.cells for item in evidence.expectations]) + "\n"
         + DECISIONS_HEADING + "\n\n" + render_table(DECISIONS_HEADER, [item.cells for item in evidence.decisions])
     )  # fmt: skip
+    # The Summary is derived from the tables as they are about to be written.
+    body = summary_body(feature_dir, parse_evidence(tables))
+    summary = f"_Generated from the tables below on {now}._\n" + ("\n" + body if body else "")
+    return preamble(feature_dir, evidence) + SUMMARY_HEADING + "\n\n" + summary + "\n" + tables
 
 
 def write_evidence(feature_dir, evidence):
@@ -831,7 +836,7 @@ def require_plan(feature_dir):
     plan = load_plan(feature_dir)
     if not plan.has_section:
         raise UsageError(
-            f"{PLAN_FILE} has no Verification Plan: the feature is not under the process, nothing was recorded"
+            f"{PLAN_FILE} has no Verification Plan: the feature is not under the process"
         )
     return plan
 
@@ -1559,6 +1564,163 @@ def cmd_gate(args, root, feature_dir):
 
 
 # ---------------------------------------------------------------------------
+# Derived status and the Review Evidence view. One function builds the view,
+# for the status subcommand and for the Summary the ledger writes.
+# ---------------------------------------------------------------------------
+
+SUMMARY_HEADER = ["Obligation", "Requirements", "Status", "Tests", "Latest result"]
+
+
+def exception_complete(exception):
+    """Whether an exception has what G7 requires of it."""
+    if not exception.rationale:
+        return False
+    if not exception.alternative and exception.kind != NO_ALTERNATIVE_KIND:
+        return False
+    needs = approval_required(exception.kind, exception.alternative, exception.needs_approval)
+    return bool(exception.approved_by) or not needs
+
+
+def obligation_status(obligation, feature):
+    """The derived status of an obligation: planned, in progress, verified, blocked or failed."""
+    evidence = feature.evidence
+    # A record classified unreliable counts in neither direction.
+    mine = [record for record in records_of(feature, obligation) if record.classification != "unreliable"]
+    naming = [exception for exception in evidence.exceptions if obligation in exception.obligations]
+    red = latest_red(feature, obligation)
+
+    if mine:
+        latest = mine[-1]
+        failing_first = latest.phase == "red" and counts(latest)
+        if latest.result == "fail" and not failing_first:
+            return "blocked" if latest.classification == "environment" else "failed"
+
+    greens = [record for record in mine if record.phase == "green" and counts(record)]
+    replacing = [item for item in naming if item.kind != NO_ALTERNATIVE_KIND and exception_complete(item)]
+    verified = False
+    if red is not None:
+        after = [record for record in greens if record.seq > red.seq]
+        if after:
+            accepted = {change.new_fingerprint for change in evidence.expectations}
+            verified = after[-1].fingerprint == red.fingerprint or after[-1].fingerprint in accepted
+    elif any(item.kind == "behaviour-preserving" for item in replacing):
+        verified = preserved(feature, obligation)
+    elif replacing:
+        verified = any(record.time >= min(item.time for item in replacing) for record in greens)
+    if verified:
+        return "verified"
+
+    if red is None and any(item.kind == NO_ALTERNATIVE_KIND for item in naming):
+        return "blocked"
+    held = {ident for decision in evidence.decisions if decision.status == "open" for ident in decision.tasks}
+    if any(task.id in held for task in feature.tasks if obligation in task.obligations):
+        return "blocked"
+    return "in progress" if mine or naming else "planned"
+
+
+def review_view(feature):
+    """What a reviewer needs: each obligation's status, then everything not verified and why."""
+    evidence = feature.evidence
+    obligations = []
+    for obligation in feature.plan.obligations:
+        records = records_of(feature, obligation.id)
+        latest = f"{records[-1].result} (#{records[-1].seq})" if records else "-"
+        obligations.append(
+            {
+                "id": obligation.id,
+                "requirements": obligation.requirements,
+                "status": obligation_status(obligation.id, feature),
+                "tests": unique(record.selector for record in records if record.selector),
+                "latest_result": latest,
+            }
+        )
+
+    not_verified = []
+    for requirement in unique(ident for row in obligations for ident in row["requirements"]):
+        open_rows = [row for row in obligations if requirement in row["requirements"] and row["status"] != "verified"]
+        if open_rows:
+            reason = ", ".join(f"{row['id']} {row['status']}" for row in open_rows)
+            not_verified.append({"requirement": requirement, "reason": reason})
+    not_verified.extend(
+        {"requirement": exemption.requirement, "reason": "exempt: see plan"} for exemption in feature.plan.exemptions
+    )
+
+    exceptions = []
+    for item in evidence.exceptions:
+        text = f"{item.id} {item.kind} on {item.task}"
+        if item.obligations:
+            text += " for " + ", ".join(item.obligations)
+        if item.approved_by:
+            text += f" (approved by {item.approved_by})"
+        elif approval_required(item.kind, item.alternative, item.needs_approval):
+            text += " (awaiting approval)"
+        exceptions.append(text)
+
+    changes = []
+    for item in evidence.expectations:
+        text = f"{item.id} on {item.task} for " + (", ".join(item.requirements) or "no requirement")
+        if item.alters_behaviour:
+            approval = f"approved by {item.approved_by}" if item.approved_by else "awaiting approval"
+            text += f", alters behaviour ({approval})"
+        changes.append(text)
+
+    return {
+        "obligations": obligations,
+        "not_verified": not_verified,
+        "open_decisions": [
+            f"{item.id} holds {', '.join(item.tasks)} ({item.question})"
+            for item in evidence.decisions
+            if item.status == "open"
+        ],
+        "exceptions": exceptions,
+        "expectation_changes": changes,
+        "pre_existing_failures": [
+            f"#{record.seq} {record.command}: {record.note or 'failing before work began'}"
+            for record in evidence.records
+            if record.phase == "baseline" and record.result == "fail"
+        ],
+    }
+
+
+def listed(items):
+    return "; ".join(items) if items else "none"
+
+
+def view_lines(view):
+    """The Review Evidence view as Markdown, for the Summary and for status."""
+    rows = [
+        {
+            "Obligation": row["id"],
+            "Requirements": join_cell(row["requirements"]),
+            "Status": row["status"],
+            "Tests": join_cell(row["tests"]),
+            "Latest result": row["latest_result"],
+        }
+        for row in view["obligations"]
+    ]
+    unverified = ", ".join(f"{item['requirement']} ({item['reason']})" for item in view["not_verified"])
+    return render_table(SUMMARY_HEADER, rows).splitlines() + [
+        "",
+        f"**Not verified**: {unverified or 'none'}.",
+        "",
+        f"**Open decisions**: {listed(view['open_decisions'])}. "
+        f"**Exceptions**: {listed(view['exceptions'])}. "
+        f"**Expectation changes**: {listed(view['expectation_changes'])}.",
+        "",
+        f"**Pre-existing failures**: {listed(view['pre_existing_failures'])}.",
+    ]
+
+
+def cmd_status(args, root, feature_dir):
+    """Print the Review Evidence view. Exit 0 whenever the artefacts can be read."""
+    plan = require_plan(feature_dir)
+    evidence = open_ledger(feature_dir)
+    tasks = parse_tasks(read_text(os.path.join(feature_dir, TASKS_FILE)) or "")
+    view = review_view(Item(dir=feature_dir, plan=plan, tasks=tasks, evidence=evidence))
+    return EXIT_OK, [], view_lines(view), view
+
+
+# ---------------------------------------------------------------------------
 # hook: the runtime event handler
 # ---------------------------------------------------------------------------
 
@@ -1824,6 +1986,7 @@ HANDLERS = {
     "tasks": cmd_tasks,
     "run": cmd_run,
     "gate": cmd_gate,
+    "status": cmd_status,
     "expectation": cmd_expectation,
     "approve": cmd_approve,
     "classify": cmd_classify,
