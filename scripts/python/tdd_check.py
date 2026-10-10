@@ -1259,6 +1259,43 @@ def gate_g4(task, feature):
     return findings
 
 
+def gate_g5(task, feature):
+    """The test files are unchanged between the failing-first and the passing record, or the change is recorded."""
+    if task.kind != "behaviour":
+        return []
+    accepted = {change.new_fingerprint for change in feature.evidence.expectations if change.task == task.id}
+    findings = []
+    for obligation in task.obligations:
+        red = latest_red(feature, obligation)
+        greens = [record for record in records_of(feature, obligation, "green") if counts(record)]
+        if red is None or not greens:
+            continue
+        green = greens[-1]
+        if green.fingerprint != red.fingerprint and green.fingerprint not in accepted:
+            findings.append(
+                Finding(
+                    "G5",
+                    f"{task.id} {obligation}",
+                    f"test files changed between the failing-first record (#{red.seq}) and the passing record "
+                    f"(#{green.seq}) with no expectation change",
+                )
+            )
+    return findings
+
+
+def gate_g8(task, feature):
+    """Each Expectation Change on the task names a requirement, and is approved where it alters behaviour."""
+    findings = []
+    for change in feature.evidence.expectations:
+        if change.task != task.id:
+            continue
+        if not change.requirements:
+            findings.append(Finding("G8", f"{task.id} {change.id}", "names no requirement"))
+        if change.alters_behaviour and not change.approved_by:
+            findings.append(Finding("G8", f"{task.id} {change.id}", "alters behaviour and has no approval"))
+    return findings
+
+
 def gate_g9(task, feature):
     """Every record for the task used a declared Verification Command."""
     declared = {command.id for command in feature.plan.commands}
@@ -1270,7 +1307,7 @@ def gate_g9(task, feature):
 
 
 # In rule order. Later rules are added here.
-GATE_RULES = [gate_g1, gate_g3, gate_g4, gate_g9]
+GATE_RULES = [gate_g1, gate_g3, gate_g4, gate_g5, gate_g8, gate_g9]
 
 
 def gate_task(task, feature):
