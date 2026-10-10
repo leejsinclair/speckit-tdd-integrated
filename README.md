@@ -90,6 +90,32 @@ The agent's instructions are in
 [`scripts/python/tdd_check.py`](scripts/python/tdd_check.py). A reviewer reads the Summary
 at the top of a feature's `tdd-evidence.md`.
 
+## Observable criteria for successful operation
+
+Each of these can be checked from a feature's artefacts, without reading its code. The
+compliance check reads most of them; it is an evaluation aid and is not a step in normal
+work, and no lifecycle command runs it. How to drive the stories and read the results is in
+[docs/evaluation.md](docs/evaluation.md), the stories are in
+[`examples/stories/`](examples/stories/), and two finished runs, one that followed the
+process and one that only added tests, are in [`examples/runs/`](examples/runs/).
+
+| Criterion | Where to see it | Success criterion |
+|-----------|-----------------|-------------------|
+| Every functional requirement and acceptance scenario has an obligation or an exemption with a reason, before implementation begins | `tdd_check.py plan` exits 0 | SC-001 |
+| A story completes with the six standard commands only | No other command appears in the session | SC-002 |
+| Every implemented behaviour has a failing run followed by a passing run, both recorded by the script, or a recorded exception with a rationale | `tdd-evidence.md`; `compliance` rules C5 | SC-003 |
+| No test is weakened, skipped or removed to obtain a pass without a recorded justification, and an approval where behaviour changes | Expectation changes table; gate rules G5 and G8 | SC-004 |
+| A reviewer who took no part can say, for any requirement, whether it is verified, by which tests and with what result, in under two minutes | The Summary in `tdd-evidence.md`; `tdd_check.py status` | SC-005 |
+| Every blocked test, unresolved failure and exception appears in the evidence and none is reported as verified | `status`; `compliance` rule C7 | SC-006 |
+| Routine cycles make no approval request; requests occur only for ambiguity, consequential trade-offs and exceptions beyond the agent's authority | The conversation | SC-007 |
+| The plan's verification commands are the project's own, on at least three projects that differ in language and test framework | Verification commands table, Source column | SC-008 |
+| The project's own lint, static analysis, security and CI configuration is untouched and still gates | `git diff` of the project's configuration; its own commands | SC-009 |
+| Each example story produces its defined expected behaviour | The story's checklist | SC-010 |
+| A run that only added test files is reported non-compliant, and the same result is given each time | `compliance` on `examples/runs/tests-only` | SC-011 |
+
+SC-012, the view of developers and reviewers on understandability and overhead, needs
+feedback from trial use and cannot be checked from artefacts.
+
 ## Known limits
 
 These are limits of the first release. None is presented as covered.
