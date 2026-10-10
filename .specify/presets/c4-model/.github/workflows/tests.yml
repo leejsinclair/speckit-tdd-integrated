@@ -1,0 +1,49 @@
+name: Tests
+
+# Pull requests are the gate before merge. Pushes to main cover direct pushes and
+# record the state each release tag is cut from.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+      - name: Run Ruff
+        run: uvx ruff check .
+      - name: Run Bandit
+        run: uvx bandit -c bandit.yml -r scripts tests
+      - name: Run Markdown lint
+        run: npx -y markdownlint-cli2
+
+  layout-helper:
+    name: c4_layout.py (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The script ships to users' machines, so test the oldest supported
+        # Python as well as the newest.
+        python: ["3.9", "3.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run tests
+        run: python -B -m unittest discover -s tests -v

@@ -1,0 +1,36 @@
+installed:
+- c4
+- know-your-spec
+settings:
+  auto_execute_hooks: true
+hooks:
+  after_plan:
+  - extension: c4
+    command: speckit.c4.validate
+    enabled: true
+    optional: true
+    priority: 10
+    prompt: Validate the architecture diagrams for this feature?
+    description: Check C4, sequence and ER diagrams against the conventions and the
+      plan artifacts
+    condition: null
+  after_implement:
+  - extension: c4
+    command: speckit.c4.system
+    enabled: true
+    optional: true
+    priority: 10
+    prompt: Merge this feature's architecture changes into the project-level C4 views?
+    description: Update context, container and ER views from the feature's Architecture
+      Impact table
+    condition: null
+  after_specify:
+  - extension: know-your-spec
+    command: speckit.know-your-spec.check
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.know-your-spec.check?
+    description: Run the five-question Comprehension Checkpoint immediately after
+      a spec is finished
+    condition: null

@@ -1,0 +1,12 @@
+# Kept out of release archives (git archive and tag archives), so that a preset or
+# extension installed from one holds only shipped files. See research.md, A9.
+.specify export-ignore
+.claude export-ignore
+specs export-ignore
+stories export-ignore
+tests export-ignore
+speckit-overview.md export-ignore
+ruff.toml export-ignore
+.markdownlint-cli2.yaml export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore

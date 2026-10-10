@@ -1,0 +1,50 @@
+[
+  {
+    "name": "baseline",
+    "N": 3,
+    "O": 2,
+    "X": 0,
+    "T": 1,
+    "L": 8.75,
+    "long": 0,
+    "canvas_ratio": 1.0,
+    "score": 32,
+    "same_geometry_as_baseline": false
+  },
+  {
+    "name": "connected",
+    "N": 2,
+    "O": 1,
+    "X": 0,
+    "T": 1,
+    "L": 9.15,
+    "long": 0,
+    "canvas_ratio": 1.0,
+    "score": 20,
+    "same_geometry_as_baseline": false
+  },
+  {
+    "name": "reversed-peers",
+    "N": 2,
+    "O": 2,
+    "X": 4,
+    "T": 3,
+    "L": 8.84,
+    "long": 1,
+    "canvas_ratio": 1.0,
+    "score": 52,
+    "same_geometry_as_baseline": false
+  },
+  {
+    "name": "rows",
+    "N": 3,
+    "O": 2,
+    "X": 0,
+    "T": 1,
+    "L": 8.75,
+    "long": 0,
+    "canvas_ratio": 1.0,
+    "score": 32,
+    "same_geometry_as_baseline": true
+  }
+]

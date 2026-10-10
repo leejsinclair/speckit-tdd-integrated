@@ -1,0 +1,16 @@
+# C4 Architecture Diagrams configuration
+# Installed as .specify/extensions/c4/c4-config.yml. Edit that file to change
+# where architecture documents are written.
+
+# Directory (relative to the repository root) for the project-level views:
+# context.md, containers.md and erd.md.
+architecture_dir: "docs/architecture"
+
+# File name of the per-feature architecture document, written inside the
+# feature directory (specs/<feature>/).
+feature_file: "architecture.md"
+
+# Command that runs the Mermaid CLI, used to render diagrams when checking syntax
+# and layout. Nothing is downloaded unless you choose a command that does so, for
+# example "npx -y @mermaid-js/mermaid-cli".
+mermaid_cli: "mmdc"

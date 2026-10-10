@@ -1,0 +1,84 @@
+schema_version: "1.0"
+
+extension:
+  id: "c4"
+  name: "C4 Architecture Diagrams"
+  version: "0.2.0"
+  description: "C4 model context, container and component diagrams, sequence diagrams for flows and ER diagrams for databases, all in Mermaid"
+  category: "docs"
+  effect: "read-write"
+  author: "Lee Sinclair"
+  repository: "https://github.com/leejsinclair/speckit-c4Model"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=1.0.0"
+  tools:
+    - name: "mmdc"
+      description: "Mermaid CLI, used by speckit.c4.validate to parse diagrams when available"
+      install_url: "https://github.com/mermaid-js/mermaid-cli"
+      required: false
+    - name: "python3"
+      description: "Python 3, used by scripts/python/c4_layout.py to compare and measure C4 diagram layouts"
+      install_url: "https://www.python.org/downloads/"
+      required: false
+
+provides:
+  commands:
+    - name: "speckit.c4.system"
+      file: "commands/speckit.c4.system.md"
+      description: "Create or update the project-level C4 context, container and ER views"
+    - name: "speckit.c4.feature"
+      file: "commands/speckit.c4.feature.md"
+      description: "Generate a feature's component, sequence and ER diagrams in architecture.md"
+    - name: "speckit.c4.validate"
+      file: "commands/speckit.c4.validate.md"
+      description: "Check architecture diagrams for syntax, C4 rule and consistency problems (read-only)"
+
+  templates:
+    - name: "c4-conventions"
+      file: "templates/c4-conventions.md"
+      description: "C4, sequence and ER diagram rules shared by all commands"
+    - name: "c4-context-template"
+      file: "templates/c4-context-template.md"
+      description: "Project-level C4 system context view"
+    - name: "c4-container-template"
+      file: "templates/c4-container-template.md"
+      description: "Project-level C4 container view"
+    - name: "c4-erd-template"
+      file: "templates/c4-erd-template.md"
+      description: "Project-level entity relationship view"
+    - name: "c4-feature-architecture-template"
+      file: "templates/c4-feature-architecture-template.md"
+      description: "Per-feature component, sequence and ER diagrams"
+
+  config:
+    - name: "c4-config.yml"
+      template: "config-template.yml"
+      description: "Output locations for architecture documents"
+      required: false
+
+hooks:
+  after_plan:
+    command: "speckit.c4.validate"
+    optional: true
+    prompt: "Validate the architecture diagrams for this feature?"
+    description: "Check C4, sequence and ER diagrams against the conventions and the plan artifacts"
+  after_implement:
+    command: "speckit.c4.system"
+    optional: true
+    prompt: "Merge this feature's architecture changes into the project-level C4 views?"
+    description: "Update context, container and ER views from the feature's Architecture Impact table"
+
+tags:
+  - "c4"
+  - "architecture"
+  - "diagrams"
+  - "mermaid"
+  - "erd"
+
+config:
+  defaults:
+    architecture_dir: "docs/architecture"
+    feature_file: "architecture.md"
+    mermaid_cli: "mmdc"

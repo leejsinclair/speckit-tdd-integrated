@@ -1,0 +1,21 @@
+# Lints the repository's own Markdown. Spec Kit's installed files and the
+# background notes written before this project had a linter are left out.
+globs:
+  - "**/*.md"
+ignores:
+  - ".specify/**"
+  - ".claude/**"
+  - "node_modules/**"
+  - "speckit-overview.md"
+  # Fixture features include deliberately malformed documents.
+  - "tests/fixtures/features/**"
+config:
+  # Prose is wrapped by hand at about 90 columns and tables are not wrapped.
+  MD013: false
+  # The design documents under specs/ use compact table rows and bare URLs.
+  MD060: false
+  MD034: false
+  # Templates and fixtures hold placeholders in angle brackets.
+  MD033: false
+  # Template addenda and command wrappers are fragments and do not open with a title.
+  MD041: false

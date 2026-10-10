@@ -1,0 +1,410 @@
+# Quickstart: validating Integrated TDD
+
+**Feature**: `001-integrated-tdd` | **Plan**: [plan.md](./plan.md)
+
+How to prove the feature works once it is built. The scenarios follow the constitution's
+four test levels. Formats and commands are defined in the contracts and are not repeated
+here: [check script](./contracts/check-cli.md),
+[artefact formats](./contracts/artefact-formats.md),
+[packaging](./contracts/packaging.md).
+
+## Prerequisites
+
+- Spec Kit CLI 1.0.2.dev0 or later (`specify version`)
+- Python 3.9 or later
+- Claude Code, for scenarios 3 to 5
+- `uvx` and `npx`, for the linters only
+
+`<repo>` is the absolute path of this repository. `<tmp>` is a throwaway directory outside
+it. Never install into this repository's own `.specify/`.
+
+## 1. Automated tests (structural and behavioural, no agent)
+
+```bash
+cd <repo>
+python3 -B -m unittest discover -s tests
+uvx ruff check .
+npx -y markdownlint-cli2
+```
+
+**Expected**: all tests pass and both linters report nothing. The suite covers:
+
+| Area | What is proved |
+|------|----------------|
+| Parsing | The Verification Plan, task labels and evidence tables are read as the artefact contract defines, including malformed input |
+| `plan` and `tasks` checks | Each rule fails on a fixture that breaks it and passes on one that does not |
+| `run` | A real subprocess is executed; valid and invalid Red, Green, Refactor and checkpoint outcomes are recorded as the contract's table says; an undeclared command records nothing |
+| Gate | Each of G1 to G9 has a failing and a passing fixture |
+| `hook` | Each row of the hook contract's situation table, using recorded Claude Code payloads |
+| Compliance | `examples/runs/compliant/` is reported compliant and `examples/runs/tests-only/` non-compliant, and two runs on the same files give identical output (SC-011) |
+| Manifests | `extension.yml` and `preset.yml` are well formed (read by pattern; loading by Spec Kit is proved in scenario 2), every file they name exists, and every wrapper contains `{CORE_TEMPLATE}` |
+
+## 2. Installation and registration
+
+```bash
+specify init <tmp>/proj --integration claude
+cd <tmp>/proj
+cp .claude/settings.json <tmp>/settings.before.json 2>/dev/null || echo '{}' > <tmp>/settings.before.json
+ls .claude/skills > <tmp>/skills.before.txt
+
+specify extension add --dev <repo>
+specify preset add --dev <repo>
+
+specify extension list
+specify preset list
+specify preset resolve plan-template
+specify preset resolve tasks-template
+specify preset resolve speckit.plan
+specify preset resolve speckit.tasks
+specify preset resolve speckit.analyze
+specify preset resolve speckit.implement
+ls .claude/skills | diff <tmp>/skills.before.txt -
+```
+
+**Expected**:
+
+- Both packages are listed as installed and enabled.
+- `plan-template` ends with the Verification Plan section, and `tasks-template` with the
+  label conventions.
+- Each resolved command contains the whole core command with the wrapper's text around it.
+- The skill list is unchanged: no new skill exists (SC-002).
+- `.claude/settings.json` has one `PreToolUse` entry that was not in
+  `<tmp>/settings.before.json`, and nothing else differs.
+
+Research assumptions A1 to A9 are settled earlier, by the installation tests in tasks T016
+to T019. This scenario repeats the checks for A4 and A9 on the finished packages.
+
+## 3. The hard stop (research assumption A1)
+
+In `<tmp>/proj`, with a feature that has a Verification Plan and a labelled `tasks.md` but
+no evidence, ask Claude Code to mark the first behaviour task complete.
+
+**Expected**: the edit is refused. The agent is shown the gate's findings by rule
+identifier and told the two ways forward. `tasks.md` is unchanged. Asking the agent to edit
+`tdd-evidence.md` directly is also refused.
+
+Then tick a `[NT: reason]` task, and edit an unrelated file.
+
+**Expected**: both succeed without delay.
+
+## 4. Behavioural: the lifecycle on representative stories
+
+Do this in three throwaway projects that differ in language and test framework, each with
+its own lint and CI configuration already in place (SC-008). In the first project take
+every story in `examples/stories/` (SC-010). In the other two take normal development,
+justified exception and small low-risk change, the stories most sensitive to language and
+test framework. That is 13 runs. For each, run the standard commands only:
+
+```text
+/speckit-specify <story>
+/speckit-clarify
+/speckit-plan
+/speckit-tasks
+/speckit-analyze
+/speckit-implement
+```
+
+Then check the run:
+
+```bash
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py compliance
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py status
+```
+
+**Expected for every run**: no command other than those six was needed; the compliance
+check reports `COMPLIANT`; the verification commands in the plan are the project's own; the
+project's test, lint and CI configuration are untouched; and the project's lint and other
+quality commands, run before the first command and again after the last, still run and
+still gate as they did before (SC-009).
+
+**Expected per story**, as each story's own file defines in full:
+
+| Story | Expected behaviour |
+|-------|--------------------|
+| Normal development | Every obligation shows a valid failing-first record before a passing one. No approval was requested (SC-007) |
+| Regression | An existing test fails after a change. The failure is classified, fixed and rerun; the test itself is unchanged |
+| Material ambiguity | Planning stops to ask the developer about the ambiguity. Nothing is planned for it until answered, so the `plan` check fails and the plan is not reported complete. The answer is recorded in the specification's Clarifications before the obligation is written. No Decision is recorded: those belong to the implementation stage |
+| Test failure | An environment failure is classified as environmental and reported as blocked. The task is not marked complete and the final report does not call it verified |
+| Justified exception | A change unsuited to test-first has an Exception with a rationale and an alternative verification. Where the trade-off is consequential the developer is asked |
+| Weakening is the easy route | The agent does not alter the test to pass. Any change to a test after its Red run appears as an Expectation Change with a requirement and, where behaviour changes, an approval (SC-004) |
+| Small, low-risk change | A change to one existing behaviour, such as a default value. The plan holds one obligation per requirement and acceptance scenario and no more, at one testing level, with no exemption or exception that a larger change would not also need. No approval was requested, and the same commands were used (FR-013, US1-AS5) |
+
+A reviewer who took no part then opens `tdd-evidence.md` and answers, for three
+requirements chosen at random, whether each is verified, by which tests and with what
+result.
+
+**Expected**: each answer in under 2 minutes from the artefacts alone (SC-005).
+
+## 5. Regression and removal
+
+In a project that also has the `c4` extension and `c4-model` preset installed:
+
+```bash
+specify preset resolve speckit.plan
+specify preset set-priority integrated-tdd 5
+specify preset resolve speckit.plan
+```
+
+**Expected**: both presets' additions are present in the composed plan command in either
+order, and `/speckit-plan` produces both `architecture.md` and the Verification Plan.
+
+Then remove:
+
+```bash
+specify preset remove integrated-tdd
+specify extension remove integrated-tdd
+diff <tmp>/settings.before.json .claude/settings.json
+ls .claude/skills | diff <tmp>/skills.before.txt -
+specify preset resolve speckit.implement
+```
+
+**Expected**: the settings file and skill list match their state before installation, the
+implement command is the core command again, existing feature directories are untouched,
+and `/speckit-plan` on a new feature works as core Spec Kit does (FR-003).
+
+In a further throwaway project, leave the preset installed with the extension absent:
+remove the extension first, or add the preset alone where Spec Kit allows it. Run
+`/speckit-plan` on a small story.
+
+**Expected**: the wrapper says the extension is missing, and the stage completes as core
+Spec Kit would.
+
+With both packages installed, take a feature whose `plan.md` was written without a
+Verification Plan and run `/speckit-tasks` and `/speckit-implement`.
+
+**Expected**: each stage states the gap at its start and in its final report, names
+`/speckit-plan` as the remedy, completes as core Spec Kit would, and does not describe the
+work as verified.
+
+## What these scenarios do not prove
+
+- Scenario 4 is run by a person. A passing compliance check shows the recorded process was
+  followed; it does not show that the tests' assertions are meaningful, which a reviewer
+  judges.
+- SC-012 needs feedback gathered from trial use and is not covered here.
+- Reductions in review effort, escaped defects and rework need baseline data the adopting
+  team holds, and are outside this feature.
+
+## Validation results
+
+Results of running the scenarios above while the feature was built. Each entry names the
+task that produced it. `<tmp>/proj` is a throwaway project created with
+`specify init --integration claude` (Spec Kit CLI 1.0.2.dev0, Claude Code 2.1.296, Linux),
+holding a small Python library with its own `make test` and `make lint`.
+
+### User Story 1: verification intent before implementation (T038, 2026-10-10)
+
+Both packages were installed with `--dev` from this repository.
+
+| Check | Expected | Observed | Met |
+|-------|----------|----------|-----|
+| `specify preset resolve plan-template` and `tasks-template` | Core template with the addendum appended | Chain: core, then `integrated-tdd` append. The composed plan template holds every core section and ends with `## Verification Plan` and its three tables; the composed tasks template ends with `## Verification labels` | Yes |
+| `specify preset resolve speckit.plan`, `speckit.tasks`, `speckit.analyze` | Whole core command with the wrapper's text around it | Chain: core, then `integrated-tdd` wrap. Each composed skill holds the core command once (plan 170 core lines in 241, tasks 219 in 284, analyze 255 in 313), the note above it and the added section below it, and no `{CORE_TEMPLATE}` token | Yes |
+| `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, `/speckit-analyze` on a small story (a cart total with an empty-cart and a negative-price rule), run through `claude -p`, no other command | Verification Plan and labelled tasks produced by the standard commands | The plan held two commands taken from the project's README and Makefile (`python3 -m unittest {select}`, `make test`), 12 obligations and no exemptions. The task list held 25 tasks: a test task ahead of each behaviour task for every obligation, and one `[NT: reason]` task. The analysis report had a "Verification coverage" section quoting both checks, and `git status` showed analyze changed no file | Yes |
+| `tdd_check.py plan` | Exit 0 | `plan: passed`, exit 0 | Yes |
+| `tdd_check.py tasks` | Exit 0 | `tasks: passed`, exit 0, after the correction below | Yes |
+| Skill list against the "before" listing | Unchanged | Identical | Yes |
+
+Two defects were found and corrected:
+
+- The generated `tasks.md` keeps the "Verification labels" section, whose three example
+  task lines sit in a fenced code block. The parser read them as tasks `T011` to `T013`, a
+  second use of those ids. Tests were added and seen to fail (commit `3fded87`), then the
+  parser was changed to skip fenced code blocks and the `tasks` check to report a task id
+  used twice (commit `268f62b`).
+- The wrappers wrote `/__SPECKIT_COMMAND_PLAN__`, which Spec Kit expanded to
+  `//speckit-plan`, because the token already carries the slash. The wrappers now use the
+  bare token.
+
+### User Story 2: the hard stop, scenario 3 (T052, 2026-10-10)
+
+In `<tmp>/proj`, with the feature from T038 (a Verification Plan, labelled tasks, no
+evidence) and the finished packages reinstalled. Claude Code was run with `claude -p`,
+edits accepted and the shell tool disallowed, and told not to retry or work round a
+refusal.
+
+| Step | Expected | Observed | Met |
+|------|----------|----------|-----|
+| Mark the first behaviour task (`T003`, `[VO-001]`) complete with Edit | Refused, with rule identifiers and the two ways forward; `tasks.md` unchanged | Refused. The agent was shown `G3 T003 VO-001: no valid failing-first record and no exception`, `G4 T003 VO-001: no valid passing record after its failing-first record` and the two ways forward. `tasks.md` was unchanged | Yes |
+| Write `tdd-evidence.md` with Write | Refused | Refused with "Evidence is written only by the check script" and the subcommand to use. No file was created | Yes |
+| Tick the `[NT: reason]` task (`T025`) | Succeeds without delay | Succeeded | Yes |
+| Edit an unrelated file (`README.md`) | Succeeds without delay | Succeeded | Yes |
+| `run --phase red` before any baseline | Exit 2, nothing recorded | Exit 2 with the record-a-baseline-first message; no evidence document was created | Yes |
+| `run --phase baseline --command suite` (`make test`) | Recorded, valid | `recorded #1: baseline suite: pass, valid` | Yes |
+| Write the test, then `run --phase red` on the test task `T002` with the expected failure text | Recorded as a valid failing-first record | `recorded #2: red unit-one: fail, valid`. `gate --task T002` passed; `gate --task T003` failed on G4 only | Yes |
+| Implement, then `run --phase green` on `T003` | Recorded, valid; the gate passes | `recorded #3: green unit-one: pass, valid`; `gate T003: passed` | Yes |
+| Mark `T002` and `T003` complete with Edit | Both succeed | Both succeeded | Yes |
+
+### User Story 6: installation and coexistence, scenarios 2 and 5 (T075, 2026-10-10)
+
+Run in fresh projects, with both packages installed from a tree made by `git archive HEAD`
+(a release archive), so only shipped files were copied. `c4` and `c4-model` were installed
+first in `projA`.
+
+| Expected outcome | Observed | Met |
+|------------------|----------|-----|
+| Both packages listed as installed and enabled, beside `c4` and `c4-model` | Listed, all enabled | Yes |
+| The release tree installs only shipped files | `.specify/extensions/integrated-tdd/` held `CHANGELOG.md`, `commands`, `extension.yml`, `LICENSE`, `README.md`, `scripts`, `templates`; the preset directory held `preset`, `preset.yml`, the same documents, and Spec Kit's own `.composed` | Yes. No `.git`, `.specify`, `.claude` or `specs` |
+| The skill list is unchanged | Identical to the listing before our install | Yes |
+| `.claude/settings.json` gains one `PreToolUse` entry and nothing else changes | One new entry, matcher `Edit\|Write\|MultiEdit`; every other setting equal | Yes |
+| `plan-template` ends with the Verification Plan and keeps the `c4-model` Architecture section | Both present | Yes |
+| The composed plan command holds both presets' text and the core command once, in either priority order | Equal priority and priority 20: core, then `integrated-tdd`, then `c4-model`. Priority 5: core, then `c4-model`, then `integrated-tdd`. In each: our note and our section once, the `c4-model` note and section once, one `## Outline`, no `{CORE_TEMPLATE}` | Yes |
+| `/speckit-plan` with both produces `architecture.md` and the Verification Plan | `architecture.md` (4 diagrams) and a plan with 9 obligations; `tdd_check.py plan` exited 0 | Yes |
+| Preset installed with the extension absent: `/speckit-plan` says the extension is missing and completes as core Spec Kit would | The plan was written and the report said the extension is not installed and the check was not run | Yes |
+| Feature planned without a Verification Plan, both packages installed: `/speckit-tasks` and `/speckit-implement` state the gap, name `/speckit-plan`, complete as core, do not call the work verified | Both completed as core. Each report stated the gap, named `/speckit-plan`, and said the work was not verified. No labels, no check run, no `tdd-evidence.md`. The start-of-stage statement is not visible in `claude -p` output, which returns the final message only | Yes for the report; the start statement is not observed |
+| Removal: `specify preset remove`, then `specify extension remove` | Both removed. Skill list as before. Feature directory untouched. `speckit.implement` resolves to the core command. The `PreToolUse` entry went with the extension | Yes |
+
+Two differences from the expected outcomes, recorded rather than fixed here:
+
+- **`/speckit-plan` after removal still carries our note.** With `c4-model` left installed,
+  its stored composed command (`.specify/presets/c4-model/.composed/speckit.plan.md`)
+  already held our wrapper, and Spec Kit did not recompose it when our preset was removed.
+  `preset set-priority`, `disable` and `enable` did not refresh it either. Removing and
+  re-adding `c4-model` did. The stale note is harmless: it tells the agent to continue as
+  core Spec Kit when the check script is absent, which it now is, and the composed skill
+  held no other trace of ours. It is recorded as a known limit in the README.
+- **`.claude/settings.json` was absent after removal** in `projA` because the project had
+  none before the extension was added. Spec Kit removed the file it had created; nothing of
+  the developer's changed.
+
+### Performance limits (T083, 2026-10-10)
+
+`tests/test_performance.py` generates a feature of 200 tasks and about 1,000 evidence
+records and times each subcommand as a subprocess. These tests measure code that already
+existed, so they passed on their first run. Before accepting them, each limit was shown to
+be reachable by setting `TDD_PERF_SCALE`, which multiplies the generated feature's size.
+
+| Test | Limit | At stated size | Exceeded at | Observed there |
+|------|-------|----------------|-------------|----------------|
+| `plan` | 2 s | 0.06 s | not exceeded at 150x (15,000 obligations; the whole run, with generation, took 3.2 s) | linear in the plan's rows |
+| `tasks` | 2 s | 0.07 s | 60x | 3.83 s |
+| `gate --all` | 2 s | 0.14 s | 10x | 5.67 s (17.2 s at 15x, 75.5 s at 25x) |
+| `status` | 2 s | 0.10 s | 15x | 5.87 s (23.8 s at 25x) |
+| `compliance` | 2 s | 0.15 s | 10x | 7.48 s (22.6 s at 15x, 99.6 s at 25x) |
+| `hook` completing a task | 1 s | well under 1 s | 60x | 1.59 s |
+| `hook` on an unguarded file | 1 s | well under 1 s | not reachable by size | It opens no artefact, so its time does not depend on the feature. The test also gives it an unreadable `plan.md`, which would fail a hook that opened it |
+
+Two things follow:
+
+- The limits are met at the stated size with a wide margin, so the tests are accepted
+  there.
+- `gate --all`, `status` and `compliance` grow faster than linearly: each task or
+  obligation scans every record. At 10 times the stated size they pass 2 seconds. This is
+  outside the specification's stated scale and is not changed here; indexing the records by
+  obligation and task is the fix if a project reaches that size.
+
+A run of the `plan` check against 100,000 and 400,000 obligations was not made.
+
+### Python 3.9 and scenario 1 (T084, T085, 2026-10-10)
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Suite on the oldest supported interpreter | `uv run --python 3.9 python -B -m unittest discover -s tests` (CPython 3.9.25) | 380 tests, OK. No change to the script or the tests was needed |
+| Suite on the development interpreter | `python3 -B -m unittest discover -s tests` (CPython 3.14.7) | 380 tests, OK |
+| Python lint | `uvx ruff check .` | All checks passed |
+| Markdown lint | `npx -y markdownlint-cli2` | 0 issues |
+
+Scenario 1's table of areas is covered as follows: parsing (`test_parsing.py`), `plan` and
+`tasks` (`test_trace.py`), `run` and the ledger (`test_run.py`), the gate (`test_gate.py`),
+the hook (`test_hook.py`), status and the Summary (`test_status.py`), compliance and the
+two example runs (`test_compliance.py`), manifests, wrappers and templates
+(`test_manifests.py`), the common command line and the standard-library-only rule
+(`test_cli.py`) and the time limits (`test_performance.py`).
+
+### Replay of the Red-before-Green history (T090, 2026-10-10)
+
+For each commit whose message lists failing tests, the commit was checked out into a
+temporary `git worktree`, the suite was run with
+`python3 -B -m unittest discover -s tests`, and the failing tests were compared with the
+commit message. Then the history was walked forward to the first commit at which the named
+tests all pass, and they were run there. 19 commits list failing tests; T083's tests are
+not fail-first by recorded exception.
+
+| Test task | Red commit | Message and replay | Implementation commit | Named tests there |
+|-----------|------------|--------------------|-----------------------|-------------------|
+| T008 | `b6a3380` | 12 run, FAILED (failures=12) | `f1cd718` | 12 tests pass |
+| T009 | `26f80aa` | 25 run, FAILED (failures=25) | `f1cd718` | 25 tests pass |
+| T010 | `c3397bb` | 33 run, FAILED (failures=33) | `f1cd718` | 33 tests pass |
+| T022 | `df1025c` | 68 run, FAILED (failures=35) | `a631583` | 35 tests pass |
+| T027 | `e53c1f7` | 90 run, FAILED (failures=21) | `2de3da5` | 21 tests pass |
+| T028 | `71f5133` | 102 run, FAILED (failures=32) | `ed656ba` | 32 tests pass |
+| T029 | `e9d41be` | 124 run, FAILED (failures=49) | `9f53d20` | 49 tests pass |
+| found in T038 | `3fded87` | 127 run, FAILED (failures=2) | `268f62b` | 2 tests pass |
+| T039 | `9805135` | 153 run, FAILED (failures=26) | `a77df33` | 26 tests pass |
+| T040 | `17c736a` | 170 run, FAILED (failures=43) | `a77df33` | 43 tests pass |
+| T042 | `47e9677` | 192 run, FAILED (failures=63) | `005ef72` | 63 tests pass |
+| T043 | `07129f4` | 227 run, FAILED (failures=76) | `28c18bf` | 76 tests pass |
+| T044 | `ad4dc43` | 238 run, FAILED (failures=86) | `0f6c083` | 86 tests pass |
+| T053 | `90599b4` | 256 run, FAILED (failures=14) | `6a25ad8` | 14 tests pass |
+| T054 | `8342b9b` | 265 run, FAILED (failures=18) | `139682d` | 18 tests pass |
+| T059 | `aec3dae` | 290 run, FAILED (failures=21, errors=3) | `504f4be` | 24 tests pass |
+| T060 | `c8a6918` | 313 run, FAILED (failures=37, errors=3) | `ffdcaf5` | 40 tests pass |
+| T066 | `cdef716` | 342 run, FAILED (failures=26, errors=1) | `6eef52f` | 27 tests pass |
+| T077 | `157564e` | 372 run, FAILED (failures=25, errors=1) | `d85dbeb` | 26 tests pass |
+
+Result:
+
+- **18 of 19** Red commits replay exactly: the same tests fail, the same run summary line.
+  The compared evidence is the set of failing test names and the summary line. The per-test
+  reason text in each message was not compared.
+- **One mismatch, `157564e` (T077).** The message lists 26 failing tests and a clean
+  checkout has 28. The two extra, `test_compliance_writes_nothing_to_the_example_runs` and
+  `test_two_runs_give_byte_identical_output`, passed in the working tree because empty
+  `examples/runs/compliant` and `examples/runs/tests-only` directories existed there
+  (created at T001), and git does not track empty directories. With an empty run directory
+  those two tests passed vacuously. The message was true of the working tree and not of the
+  commit. History was not rewritten: the tests were corrected in a later commit (`0e9d292`)
+  so that they fail when the run's artefacts are missing, and this entry is the record.
+- Each named set of tests passes at a later commit, and at the commit its message or task
+  list names, except that the tests of T008, T009 and T010 first pass together at T015,
+  where the placeholder files complete the packages, and the ledger tests of T040 first
+  pass at the runner commit (T047), not at the ledger commit (T046): the ledger has no
+  caller until `run` exists.
+
+### Agent-driven runs with Haiku (T086 in part, T088, 2026-10-10)
+
+**This is not the run T086 specifies.** T086 asks for 13 runs by a person in three
+projects, each taking a story through all six commands. What was run instead, to keep the
+cost down, is four runs with `claude -p --model haiku` as the coding agent, through four of
+the six commands (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
+`/speckit-implement`; no `/speckit-clarify` or `/speckit-analyze`), non-interactively, so
+no approval request was possible and SC-007 was not exercised. Stories 02 to 06 were not
+run, and no third project was tried. T086 and T087 (a person reading the evidence against
+the two-minute limit, SC-005) are not done.
+
+| Run | Project | Story | Verdict | Obligations | Exceptions | Expectation changes |
+|-----|---------|-------|---------|-------------|------------|---------------------|
+| 1 | Python, `unittest`, `make test` | 01 normal development | `COMPLIANT` | 11 | 4 (3 `no-meaningful-red`, 1 `behaviour-preserving`) | 0 |
+| 2 | Node, `node --test`, `npm test` | 01 normal development | `COMPLIANT` | 12 | 7 (6 `no-meaningful-red`, 1 `behaviour-preserving`) | 0 |
+| 3 | Python | 07 small, low-risk change | `COMPLIANT` | 4, with 3 exemptions | 1 | 2 |
+| 4 (after the correction below) | Python | 07 small, low-risk change | `COMPLIANT` | 3, with 1 exemption | 0 | 0 |
+
+What was observed:
+
+- The plan's verification commands were each project's own, taken from its README
+  (`make test` and `python3 -m unittest {select}`; `npm test` and
+  `node --test test/cart.test.js`), in two languages and two test frameworks.
+- In every run `git status` showed only source and test files changed in the project, and
+  the evidence came from real runs through the script. No test, lint or CI configuration
+  was touched.
+- **Proportion was not met.** Story 01 (three requirements, a handful of scenarios) got 11
+  and 12 obligations. Story 07's expected outcome is one obligation per requirement and
+  acceptance scenario and no more; run 3 had 4 plus 3 exemptions.
+- **Most obligations were covered by exceptions, not by a failing run.** The first
+  implementation Haiku wrote was general, so later tests passed at once, and the agent
+  recorded `no-meaningful-red` with that reason. The records were honest and visible, and a
+  reviewer can read them, but little real Red was shown.
+- **Expectation changes were noise.** In run 3 two tests were added to the test file after
+  the first Red run, which changed the fingerprint of the file, and two Expectation Changes
+  followed, justified as additions with no assertion changed.
+- Run 3 also wrote a test asserting that the string `USD` appears nowhere in a source file.
+  The script cannot judge that kind of assertion; it is what a reviewer is for (FR-030).
+
+Correction (T088): `templates/tdd-process-rules.md` and the plan wrapper were changed to
+(a) write no more obligations than the requirements and scenarios need, with the small
+change spelt out, (b) make the minimum change for the current test so that the next test is
+seen to fail, and (c) add the next obligation's test after the current one is green, or
+record the file change as a correction. Story 07 was rerun (run 4): 3 obligations,
+1 exemption, no exception, no expectation change, `COMPLIANT`. That is better and not
+yet one per requirement and scenario, and one rerun on one model is not a result about the
+change in general.

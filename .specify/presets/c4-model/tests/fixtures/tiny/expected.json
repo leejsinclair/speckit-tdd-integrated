@@ -1,0 +1,26 @@
+[
+  {
+    "name": "baseline",
+    "N": 0,
+    "O": 0,
+    "X": 0,
+    "T": 0,
+    "L": 0.81,
+    "long": 0,
+    "canvas_ratio": 1.0,
+    "score": 0,
+    "same_geometry_as_baseline": false
+  },
+  {
+    "name": "rows",
+    "N": 0,
+    "O": 0,
+    "X": 0,
+    "T": 0,
+    "L": 0.81,
+    "long": 0,
+    "canvas_ratio": 1.0,
+    "score": 0,
+    "same_geometry_as_baseline": true
+  }
+]

@@ -1,0 +1,21 @@
+# Markdown lint settings. Run: npx -y markdownlint-cli2
+# Only the documents written for this repository are checked.
+globs:
+  - "**/*.md"
+gitignore: true
+ignores:
+  - ".claude/**"
+  - "insights/**"
+  - "prompts/**"
+  - "node_modules/**"
+  - "tests/fixtures/**"
+config:
+  default: true
+  MD013:
+    line_length: 100
+    tables: false
+    code_blocks: false
+  MD024:
+    siblings_only: true
+  # Tables here use short delimiter rows (|---|); column alignment is not enforced.
+  MD060: false
