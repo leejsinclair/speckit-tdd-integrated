@@ -1,10 +1,19 @@
 {
-  "hook_event_name": "PreToolUse",
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "{ROOT}/transcript.jsonl",
   "cwd": "{ROOT}",
+  "prompt_id": "00000000-0000-0000-0000-000000000000",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
   "tool_name": "Edit",
   "tool_input": {
     "file_path": "{ROOT}/src/notes.txt",
     "old_string": "one",
-    "new_string": "two"
-  }
+    "new_string": "two",
+    "replace_all": false
+  },
+  "tool_use_id": "toolu_recorded"
 }
