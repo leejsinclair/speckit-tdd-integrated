@@ -422,3 +422,23 @@ Linux.
 | A4 | 2026-10-10 | In `<tmp>/proj2`, `.claude/settings.json` was given a `permissions` entry and a `PreToolUse` hook for `Bash` of the developer's own. The file was compared before install, after `specify extension add --dev <repo>`, and after `specify extension remove integrated-tdd --force` | Install added one `PreToolUse` entry with matcher `Edit\|Write\|MultiEdit`, marked `__speckit_event__`, and left the other entries in place. After removal the file held the same data as before install. Spec Kit rewrote the file's whitespace (one item per line), so it was not byte-identical. Removal leaves a copy under `.specify/extensions/.backup/integrated-tdd/` | Confirmed, with the whitespace change noted |
 | A6 | 2026-10-10 | In `<tmp>/proj2`, `specify preset add --dev <repo>` before the extension was installed | The preset installed. No warning was printed and nothing was blocked | Confirmed that it does not block. It does not warn either, so the wrappers' own missing-extension check is the only notice |
 | A9 | 2026-10-10 | Listed `.specify/presets/integrated-tdd/` and `.specify/extensions/integrated-tdd/` after the `--dev` installs | The extension install honoured `.extensionignore`: `preset/`, `preset.yml`, `tests/`, `examples/`, `docs/`, `specs/`, `stories/`, `.specify/` and `.claude/` were absent. It did copy unlisted development files: `.git/`, `.gitignore`, `.ruff_cache/`, `.markdownlint-cli2.yaml`, `ruff.toml` and `speckit-overview.md`. The preset install copies the whole source directory with no ignore mechanism (`shutil.copytree` in `presets/__init__.py`), including `.git/`, `.specify/`, `.claude/skills/`, `specs/` and the extension's files | Failed in part. The extra extension files are inert and are now listed in `.extensionignore`. The extra preset files are not what the preset needs, and a nested `.claude/skills/` and `.specify/` are not safely inert. Fallback applies: install from a release archive built from the shipped files only |
+| A5 | 2026-10-10 | In `<tmp>/proj3` with the extension, the `c4-model` preset (installed with `--dev` from this repository's `.specify/presets/c4-model/` copy) and this preset: `specify preset resolve speckit.plan`, then `specify preset set-priority integrated-tdd 5`, resolve again, then priority 20, resolve again; the composed `.claude/skills/speckit-plan/SKILL.md` was read each time | At equal priority and at priority 20 the chain was core, `integrated-tdd` wrap, `c4-model` wrap; at priority 5 it was core, `c4-model` wrap, `integrated-tdd` wrap. In every order the composed skill held this preset's text, the `c4-model` text and the whole core command once. Run with the placeholder wrappers; repeated on the finished wrappers in quickstart scenario 5 | Confirmed |
+| A8 | 2026-10-10 | `github/spec-kit` history for `src/specify_cli/events.py`, and the tags containing the commit that added it | The file was added by commit `f8e474d` (2026-07-29, "first-class agent-native runtime hooks for integrations", #3704), which also added validation of an extension's `events:` against the canonical event names and the dispatcher's lookup of a command file by stem. The first tag containing it is `v0.15.0`; `v0.14.3` has no `events.py`. The preset strategies (`wrap`, `append`) are present at `v0.15.0` | Confirmed: `>=1.0.0` was already sufficient. The minimum is set to the release found, `>=0.15.0`. Only 1.0.2.dev0 was run |
+
+### Applied outcomes (T020)
+
+- **A1, A2, A3, A7** confirmed: no change to the design, the manifests or the plan's
+  Complexity Tracking. The handler stays unlisted.
+- **A8**: `requires.speckit_version` is `>=0.15.0` in `extension.yml`, `preset.yml` and
+  the manifests shown in [contracts/packaging.md](./contracts/packaging.md).
+- **A4**: for the README. Removal restores the settings data; Spec Kit reformats the file's
+  whitespace and keeps a backup of the extension's directory.
+- **A6**: for the README. Installing the preset without the extension gives no warning, so
+  the install order (extension, then preset) is stated and the wrappers say when the
+  extension is missing.
+- **A9**: for the README. Fallback from the assumptions table: install the preset from a
+  release archive built from the shipped files only. `.gitattributes` marks the
+  development and project files `export-ignore`, so that `git archive` and a tag archive
+  hold only shipped files. A `--dev` install from a working copy copies the whole
+  directory and is for development only. `.extensionignore` now also lists the unlisted
+  development files observed.
