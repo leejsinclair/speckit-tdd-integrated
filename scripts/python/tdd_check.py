@@ -1030,7 +1030,7 @@ def cmd_approve(args, root, feature_dir):
     """Record a person's approval. The name is recorded as given and cannot be verified."""
     require_plan(feature_dir)
     evidence = open_ledger(feature_dir)
-    entry = next((item for item in evidence.expectations if item.id == args.id), None)
+    entry = next((item for item in evidence.expectations + evidence.exceptions if item.id == args.id), None)
     if entry is None:
         raise UsageError(f"no entry {args.id} in {EVIDENCE_FILE}; nothing was recorded")
     if entry.cells["Approved by"] != "-":
@@ -1039,6 +1039,105 @@ def cmd_approve(args, root, feature_dir):
     entry.cells["Approved by"] = name
     write_evidence(feature_dir, evidence)
     return EXIT_OK, [], [f"recorded approval of {args.id} by {name}"], {"id": args.id}
+
+
+def cmd_classify(args, root, feature_dir):
+    """Set the classification of a failure record that is unclassified. Its check value is unchanged."""
+    require_plan(feature_dir)
+    evidence = open_ledger(feature_dir)
+    record = next((item for item in evidence.records if item.seq == args.seq), None)
+    if record is None:
+        raise UsageError(f"no record #{args.seq} in {EVIDENCE_FILE}")
+    if record.result == "pass":
+        raise UsageError(f"record #{args.seq} is a pass and has no classification")
+    if record.classification != "unclassified":
+        raise UsageError(f"record #{args.seq} is already classified as {record.classification}")
+    record.cells["Classification"] = args.classification
+    added = clean(args.note)
+    if added != "-":
+        record.cells["Note"] = f"{record.cells['Note']}; {added}" if record.note else added
+    write_evidence(feature_dir, evidence)
+    return EXIT_OK, [], [f"classified #{args.seq} as {args.classification}"], {"seq": args.seq}
+
+
+# Exceptions beyond the agent's authority (FR-052): these kinds, and an alternative of none.
+APPROVAL_KINDS = ("legacy", "exploratory", "other")
+NO_ALTERNATIVE_KIND = "environment-blocked"
+NONE_ALTERNATIVE = re.compile(r"^none\b", re.IGNORECASE)
+
+
+def approval_required(kind, alternative, flagged):
+    """Whether an exception needs a person's approval, whatever its flag says."""
+    return flagged or kind in APPROVAL_KINDS or bool(NONE_ALTERNATIVE.match(alternative))
+
+
+def cmd_exception(args, root, feature_dir):
+    """Record a departure from the test-first cycle, with its rationale and alternative verification."""
+    require_plan(feature_dir)
+    task = find_task(parse_tasks(require_text(feature_dir, TASKS_FILE)), args.task)
+    for ident in args.vo:
+        if ident not in task.obligations:
+            raise UsageError(f"obligation {ident} is not on task {task.id}")
+    rationale = clean(args.rationale)
+    if rationale == "-":
+        raise UsageError("--rationale must say why the cycle was not followed")
+    alternative = clean(args.alternative)
+    if alternative == "-" and args.kind != NO_ALTERNATIVE_KIND:
+        raise UsageError(f"--alternative is required for {args.kind}: say how the work is verified instead")
+    evidence = open_ledger(feature_dir)
+    ident = next_id("EX", evidence.exceptions)
+    needs = approval_required(args.kind, alternative, args.needs_approval)
+    row = {
+        "ID": ident,
+        "Time": utc_now(),
+        "Task": task.id,
+        "Obligations": join_cell(args.vo),
+        "Kind": args.kind,
+        "Rationale": rationale,
+        "Alternative verification": alternative,
+        "Needs approval": "yes" if needs else "no",
+        "Approved by": clean(args.approved_by),
+    }
+    evidence.exceptions.append(Item(id=ident, cells=row))
+    write_evidence(feature_dir, evidence)
+    return EXIT_OK, [], [f"recorded {ident} for {task.id}"], {"id": ident, "needs_approval": needs}
+
+
+def cmd_decision(args, root, feature_dir):
+    """Open a Decision that holds tasks back, or resolve one with a person's answer."""
+    require_plan(feature_dir)
+    if args.action == "open":
+        tasks = parse_tasks(require_text(feature_dir, TASKS_FILE))
+        held = [find_task(tasks, ident).id for ident in args.tasks]
+        evidence = open_ledger(feature_dir)
+        ident = next_id("DN", evidence.decisions)
+        row = {
+            "ID": ident,
+            "Opened": utc_now(),
+            "Question": clean(args.question),
+            "Tasks": join_cell(held),
+            "Status": "open",
+            "Answer": "-",
+            "Decided by": "-",
+            "Resolved": "-",
+        }
+        evidence.decisions.append(Item(id=ident, cells=row))
+        write_evidence(feature_dir, evidence)
+        return EXIT_OK, [], [f"recorded {ident}, holding {', '.join(held)}"], {"id": ident}
+
+    evidence = open_ledger(feature_dir)
+    decision = next((item for item in evidence.decisions if item.id == args.id), None)
+    if decision is None:
+        raise UsageError(f"no decision {args.id} in {EVIDENCE_FILE}; nothing was recorded")
+    if decision.cells["Status"] != "open":
+        raise UsageError(f"{args.id} is already resolved; nothing was recorded")
+    answer = clean(args.answer)
+    name = clean(args.by)
+    if "-" in (answer, name):
+        raise UsageError("--answer and --by must not be empty")
+    decision.cells.update({"Status": "resolved", "Answer": answer, "Decided by": name, "Resolved": utc_now()})
+    write_evidence(feature_dir, evidence)
+    return EXIT_OK, [], [f"recorded {args.id} as resolved by {name}"], {"id": args.id}
 
 
 # ---------------------------------------------------------------------------
@@ -1627,6 +1726,9 @@ HANDLERS = {
     "gate": cmd_gate,
     "expectation": cmd_expectation,
     "approve": cmd_approve,
+    "classify": cmd_classify,
+    "exception": cmd_exception,
+    "decision": cmd_decision,
 }
 
 
