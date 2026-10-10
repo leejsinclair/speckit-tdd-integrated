@@ -36,7 +36,7 @@ extension:
   license: "MIT"
 
 requires:
-  speckit_version: ">=1.0.0"
+  speckit_version: ">=0.15.0"
   tools:
     - name: "python3"
       description: "Runs the deterministic checks and the runtime event handler"
@@ -68,7 +68,7 @@ events:
 | Commands | `provides.commands` is absent. The extension registers no slash command or skill |
 | Lifecycle hooks | None. The `hooks:` key is absent |
 | Event handler | `commands/speckit.integrated-tdd.gate.md`, not listed in the manifest. Its frontmatter is `scripts:` with the single entry `py: scripts/python/tdd_check.py hook`. Its body says it is run by the agent runtime and is not a command to invoke |
-| `speckit_version` | To be raised to the first Spec Kit release that supports extension `events:`, once that release is identified (research assumption A8) |
+| `speckit_version` | `>=0.15.0`, the first Spec Kit release that supports extension `events:` (research assumption A8, Installation test results) |
 
 ## Preset manifest
 
@@ -84,7 +84,7 @@ preset:
   license: "MIT"
 
 requires:
-  speckit_version: ">=1.0.0"
+  speckit_version: ">=0.15.0"
   extensions:
     - "integrated-tdd"
 

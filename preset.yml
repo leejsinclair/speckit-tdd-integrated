@@ -9,7 +9,7 @@ preset:
   license: "MIT"
 
 requires:
-  speckit_version: ">=1.0.0"
+  speckit_version: ">=0.15.0"
   extensions:
     - "integrated-tdd"
 

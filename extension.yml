@@ -11,7 +11,7 @@ extension:
   license: "MIT"
 
 requires:
-  speckit_version: ">=1.0.0"
+  speckit_version: ">=0.15.0"
   tools:
     - name: "python3"
       description: "Runs the deterministic checks and the runtime event handler"
