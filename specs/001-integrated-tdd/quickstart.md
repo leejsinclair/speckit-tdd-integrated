@@ -184,3 +184,34 @@ work as verified.
 - SC-012 needs feedback gathered from trial use and is not covered here.
 - Reductions in review effort, escaped defects and rework need baseline data the adopting
   team holds, and are outside this feature.
+
+## Validation results
+
+Results of running the scenarios above while the feature was built. Each entry names the
+task that produced it. `<tmp>/proj` is a throwaway project created with
+`specify init --integration claude` (Spec Kit CLI 1.0.2.dev0, Claude Code 2.1.296, Linux),
+holding a small Python library with its own `make test` and `make lint`.
+
+### User Story 1: verification intent before implementation (T038, 2026-10-10)
+
+Both packages were installed with `--dev` from this repository.
+
+| Check | Expected | Observed | Met |
+|-------|----------|----------|-----|
+| `specify preset resolve plan-template` and `tasks-template` | Core template with the addendum appended | Chain: core, then `integrated-tdd` append. The composed plan template holds every core section and ends with `## Verification Plan` and its three tables; the composed tasks template ends with `## Verification labels` | Yes |
+| `specify preset resolve speckit.plan`, `speckit.tasks`, `speckit.analyze` | Whole core command with the wrapper's text around it | Chain: core, then `integrated-tdd` wrap. Each composed skill holds the core command once (plan 170 core lines in 241, tasks 219 in 284, analyze 255 in 313), the note above it and the added section below it, and no `{CORE_TEMPLATE}` token | Yes |
+| `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, `/speckit-analyze` on a small story (a cart total with an empty-cart and a negative-price rule), run through `claude -p`, no other command | Verification Plan and labelled tasks produced by the standard commands | The plan held two commands taken from the project's README and Makefile (`python3 -m unittest {select}`, `make test`), 12 obligations and no exemptions. The task list held 25 tasks: a test task ahead of each behaviour task for every obligation, and one `[NT: reason]` task. The analysis report had a "Verification coverage" section quoting both checks, and `git status` showed analyze changed no file | Yes |
+| `tdd_check.py plan` | Exit 0 | `plan: passed`, exit 0 | Yes |
+| `tdd_check.py tasks` | Exit 0 | `tasks: passed`, exit 0, after the correction below | Yes |
+| Skill list against the "before" listing | Unchanged | Identical | Yes |
+
+Two defects were found and corrected:
+
+- The generated `tasks.md` keeps the "Verification labels" section, whose three example
+  task lines sit in a fenced code block. The parser read them as tasks `T011` to `T013`, a
+  second use of those ids. Tests were added and seen to fail (commit `3fded87`), then the
+  parser was changed to skip fenced code blocks and the `tasks` check to report a task id
+  used twice (commit `268f62b`).
+- The wrappers wrote `/__SPECKIT_COMMAND_PLAN__`, which Spec Kit expanded to
+  `//speckit-plan`, because the token already carries the slash. The wrappers now use the
+  bare token.
