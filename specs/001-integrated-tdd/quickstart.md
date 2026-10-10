@@ -266,3 +266,31 @@ Two differences from the expected outcomes, recorded rather than fixed here:
 - **`.claude/settings.json` was absent after removal** in `projA` because the project had
   none before the extension was added. Spec Kit removed the file it had created; nothing of
   the developer's changed.
+
+### Performance limits (T083, 2026-10-10)
+
+`tests/test_performance.py` generates a feature of 200 tasks and about 1,000 evidence
+records and times each subcommand as a subprocess. These tests measure code that already
+existed, so they passed on their first run. Before accepting them, each limit was shown to
+be reachable by setting `TDD_PERF_SCALE`, which multiplies the generated feature's size.
+
+| Test | Limit | At stated size | Exceeded at | Observed there |
+|------|-------|----------------|-------------|----------------|
+| `plan` | 2 s | 0.06 s | not exceeded at 150x (15,000 obligations; the whole run, with generation, took 3.2 s) | linear in the plan's rows |
+| `tasks` | 2 s | 0.07 s | 60x | 3.83 s |
+| `gate --all` | 2 s | 0.14 s | 10x | 5.67 s (17.2 s at 15x, 75.5 s at 25x) |
+| `status` | 2 s | 0.10 s | 15x | 5.87 s (23.8 s at 25x) |
+| `compliance` | 2 s | 0.15 s | 10x | 7.48 s (22.6 s at 15x, 99.6 s at 25x) |
+| `hook` completing a task | 1 s | well under 1 s | 60x | 1.59 s |
+| `hook` on an unguarded file | 1 s | well under 1 s | not reachable by size | It opens no artefact, so its time does not depend on the feature. The test also gives it an unreadable `plan.md`, which would fail a hook that opened it |
+
+Two things follow:
+
+- The limits are met at the stated size with a wide margin, so the tests are accepted
+  there.
+- `gate --all`, `status` and `compliance` grow faster than linearly: each task or
+  obligation scans every record. At 10 times the stated size they pass 2 seconds. This is
+  outside the specification's stated scale and is not changed here; indexing the records by
+  obligation and task is the fix if a project reaches that size.
+
+A run of the `plan` check against 100,000 and 400,000 obligations was not made.
