@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 
 EXIT_OK = 0
@@ -772,6 +773,195 @@ def append_record(evidence, cells):
 
 
 # ---------------------------------------------------------------------------
+# Command runner and the run subcommand
+# ---------------------------------------------------------------------------
+
+CYCLE_PHASES = ("red", "green", "refactor")
+OUTPUT_TAIL = 40
+SAFE_SELECTOR = re.compile(r"^[A-Za-z0-9_@%+=:,./-]+$")
+KILL = 9
+
+
+def shell_quote(text):
+    """Quote a selector for the shell when it holds anything the shell would interpret."""
+    if SAFE_SELECTOR.match(text):
+        return text
+    return "'" + text.replace("'", "'\"'\"'") + "'"
+
+
+def execute(command_line, root, timeout):
+    """Run a command line through the shell from the repository root.
+
+    Returns ``(exit status, output, timed out)``. Standard error is folded into the output.
+    """
+    try:
+        process = subprocess.Popen(
+            command_line,
+            shell=True,
+            cwd=root,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=os.name == "posix",
+        )
+    except OSError as error:
+        return 1, f"could not start the command: {error}\n", False
+    timed_out = False
+    try:
+        raw, _ = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        try:
+            # The whole process group, so that a test runner's children do not keep the pipe open.
+            os.killpg(process.pid, KILL)
+        except (AttributeError, OSError):
+            process.kill()
+        raw, _ = process.communicate()
+    return process.returncode, raw.decode("utf-8", errors="replace"), timed_out
+
+
+def find_task(tasks, ident):
+    for task in tasks:
+        if task.id == ident:
+            return task
+    raise UsageError(f"task {ident} is not in {TASKS_FILE}")
+
+
+def require_plan(feature_dir):
+    plan = load_plan(feature_dir)
+    if not plan.has_section:
+        raise UsageError(
+            f"{PLAN_FILE} has no Verification Plan: the feature is not under the process, nothing was recorded"
+        )
+    return plan
+
+
+def has_baseline(evidence):
+    return any(record.phase == "baseline" for record in evidence.records)
+
+
+def require_baseline(evidence):
+    if not has_baseline(evidence):
+        raise UsageError(
+            "record a baseline with a broad command first (run --phase baseline --command <id>), "
+            "so that failures from before this feature's work are known; nothing was recorded"
+        )
+
+
+def validate_run(args, plan, feature_dir):
+    """Check the run options against the plan and the task list. Returns the declared command."""
+    command = next((item for item in plan.commands if item.id == args.command), None)
+    if command is None:
+        raise UsageError(f"command '{args.command}' is not declared in the plan; nothing was recorded")
+    takes_selector = "{select}" in command.command
+    if args.select is not None and not takes_selector:
+        raise UsageError(f"command '{command.id}' has no {{select}}; nothing was recorded")
+    if args.select is None and takes_selector:
+        raise UsageError(f"command '{command.id}' needs --select; nothing was recorded")
+    phase = args.phase
+    if phase in CYCLE_PHASES:
+        if not args.task:
+            raise UsageError(f"--task is required for {phase}")
+        if not args.vo:
+            raise UsageError(f"--vo is required for {phase}")
+        if phase == "red" and not args.tests:
+            raise UsageError("--tests is required for red")
+        if phase == "red" and not args.expect:
+            raise UsageError("--expect is required for red")
+        task = find_task(parse_tasks(require_text(feature_dir, TASKS_FILE)), args.task)
+        for ident in args.vo:
+            if ident not in task.obligations:
+                raise UsageError(f"obligation {ident} is not on task {task.id}")
+    elif args.task or args.vo:
+        raise UsageError(f"--task and --vo do not apply to {phase}")
+    return command
+
+
+def judge(phase, command, status, output, timed_out, expect):
+    """Result, validity, classification and the script's note for a run, by the phase table."""
+    passed = status == 0 and not timed_out
+    result = "pass" if passed else "fail"
+    classification = "-" if passed else "unclassified"
+    note = "timed out" if timed_out else ""
+    if phase == "baseline":
+        valid = True
+    elif phase == "red":
+        valid = not passed and not timed_out and expect in output
+        if valid:
+            classification = "assertion"
+            note = "expected: " + expect
+        elif passed:
+            note = "passed on first run: investigate"
+        elif not timed_out:
+            note = "failed for a different reason"
+    elif phase == "checkpoint":
+        valid = passed and command.scope == "broad"
+        if command.scope != "broad":
+            note = "command scope is not broad"
+    else:
+        valid = passed
+    return result, valid, classification, note
+
+
+def run_files(args, root, evidence):
+    """The test files a run is fingerprinted over."""
+    return sorted(unique(repo_relative(path, root) for path in args.tests or []))
+
+
+def cmd_run(args, root, feature_dir):
+    plan = require_plan(feature_dir)
+    command = validate_run(args, plan, feature_dir)
+    evidence = open_ledger(feature_dir)
+    if args.phase != "baseline":
+        require_baseline(evidence)
+    files = run_files(args, root, evidence)
+
+    line = command.command
+    if args.select is not None:
+        line = line.replace("{select}", shell_quote(args.select))
+    status, output, timed_out = execute(line, root, args.timeout)
+    result, valid, classification, note = judge(args.phase, command, status, output, timed_out, args.expect or "")
+    # Hashed after the run, so the fingerprint is of the files as the run saw them.
+    supplied = clean(args.note)
+    if supplied != "-":
+        note = f"{note}; {supplied}" if note else supplied
+    record = append_record(
+        evidence,
+        {
+            "Task": clean(args.task),
+            "Obligations": join_cell(args.vo),
+            "Phase": args.phase,
+            "Command": command.id,
+            "Selector": clean(args.select),
+            "Result": result,
+            "Valid": "yes" if valid else "no",
+            "Classification": classification,
+            "Files": join_cell(files),
+            "Fingerprint": fingerprint(files, root),
+            "Note": clean(note),
+        },
+    )
+    write_evidence(feature_dir, evidence)
+
+    tail = output.splitlines()[-OUTPUT_TAIL:]
+    state = "valid" if valid else f"not valid for {args.phase}"
+    lines = list(tail)
+    if not valid and note:
+        lines.append(f"not valid: {note}")
+    lines.append(f"recorded #{record.seq}: {args.phase} {command.id}: {result}, {state}")
+    extra = {
+        "seq": record.seq,
+        "phase": args.phase,
+        "result": result,
+        "valid": valid,
+        "classification": record.classification,
+        "note": record.note,
+        "output_tail": tail,
+    }
+    return (EXIT_OK if valid else EXIT_FAIL), [], lines, extra
+
+
+# ---------------------------------------------------------------------------
 # Trace checks: plan (C1) and tasks (G1, C2, C3)
 # ---------------------------------------------------------------------------
 
@@ -1085,6 +1275,7 @@ def build_parser():
 HANDLERS = {
     "plan": cmd_plan,
     "tasks": cmd_tasks,
+    "run": cmd_run,
 }
 
 
@@ -1102,10 +1293,12 @@ def emit(args, code, findings=(), lines=(), extra=None, error=None):
             data.update(extra)
         sys.stdout.write(json.dumps(data, sort_keys=True) + "\n")
     else:
+        lines = list(lines)
+        if findings:
+            # The heading line, then the findings, then anything the subcommand adds.
+            lines = lines[:1] + [str(finding) for finding in findings] + lines[1:]
         for line in lines:
             sys.stdout.write(line + "\n")
-        for finding in findings:
-            sys.stdout.write(str(finding) + "\n")
     if error is not None:
         sys.stderr.write(f"tdd_check.py {args.subcommand}: {error}\n")
     return code
