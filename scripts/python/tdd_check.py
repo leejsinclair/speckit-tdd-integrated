@@ -718,6 +718,13 @@ def cmd_plan(args, root, feature_dir):
     return code, findings, lines, None
 
 
+def cmd_tasks(args, root, feature_dir):
+    tasks = parse_tasks(require_text(feature_dir, TASKS_FILE))
+    findings = check_tasks(load_plan(feature_dir), tasks)
+    code, lines = verdict("tasks", findings)
+    return code, findings, lines, None
+
+
 # ---------------------------------------------------------------------------
 # hook: the runtime event handler
 # ---------------------------------------------------------------------------
@@ -881,6 +888,7 @@ def build_parser():
 # (exit code, findings, lines of text, extra fields for --json).
 HANDLERS = {
     "plan": cmd_plan,
+    "tasks": cmd_tasks,
 }
 
 
