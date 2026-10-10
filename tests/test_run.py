@@ -594,5 +594,258 @@ class ExpectationTests(RunCase):
         self.assertEqual(set(before) - set(after), set())
 
 
+EX_HEADING = "## Exceptions"
+DN_HEADING = "## Decisions"
+ALL_KINDS = [
+    "no-meaningful-red", "behaviour-preserving", "legacy", "external-system", "generated-code", "migration",
+    "infrastructure", "exploratory", "environment-blocked", "other",
+]  # fmt: skip
+ALWAYS_APPROVED_KINDS = ("legacy", "exploratory", "other")
+
+
+class RecordingCase(RunCase):
+    def setUp(self):
+        super().setUp()
+        self.baseline()
+
+    def rows(self, heading):
+        return table_rows(evidence_text(self.root), heading)
+
+    def assert_only_evidence_changed(self, before):
+        after = snapshot(self.root)
+        self.assertEqual({name for name in after if before.get(name) != after[name]}, {EVIDENCE_REL})
+        self.assertEqual(set(before) - set(after), set())
+
+
+class ClassifyTests(RecordingCase):
+    def setUp(self):
+        super().setUp()
+        self.red()
+        self.green(select="import")  # 3: an unclassified failure
+        self.green()  # 4: a pass
+
+    def classify(self, seq, kind, *extra):
+        return self.check(["classify", "--seq", str(seq), "--as", kind] + list(extra), self.root)
+
+    def test_classify_sets_each_classification(self):
+        for kind in ("assertion", "defect", "environment", "unreliable"):
+            self.green(select="import")
+            seq = len(records(self.root))
+            result = self.classify(seq, kind)
+            self.assertEqual((result.code, result.out), (0, f"classified #{seq} as {kind}\n"), result)
+            self.assertEqual(records(self.root)[-1]["Classification"], kind)
+
+    def test_classify_leaves_the_check_value_and_every_other_cell_unchanged(self):
+        before = records(self.root)
+        self.classify(3, "environment")
+        after = records(self.root)
+        self.assertEqual(after[2]["Check"], before[2]["Check"])
+        self.assertEqual(after[2]["Check"], check_value(after[1]["Check"], after[2]))
+        before[2]["Classification"] = "environment"
+        self.assertEqual(after, before)
+
+    def test_classify_may_extend_the_note(self):
+        self.classify(3, "environment", "--note", "the package index was unreachable")
+        self.assertEqual(records(self.root)[2]["Note"], "the package index was unreachable")
+        self.red(select="import")
+        seq = len(records(self.root))
+        self.classify(seq, "defect", "--note", "a typo|in the test")
+        self.assertEqual(records(self.root)[-1]["Note"], "failed for a different reason; a typo in the test")
+
+    def test_classify_refuses_a_pass(self):
+        result = self.classify(4, "defect")
+        self.assertEqual(result.code, 2)
+        self.assertIn("record #4 is a pass", result.err)
+
+    def test_classify_refuses_a_record_already_classified(self):
+        result = self.classify(2, "defect")
+        self.assertEqual(result.code, 2)
+        self.assertIn("record #2 is already classified as assertion", result.err)
+        self.classify(3, "defect")
+        self.assertEqual(self.classify(3, "environment").code, 2)
+        self.assertEqual(records(self.root)[2]["Classification"], "defect")
+
+    def test_classify_refuses_an_unknown_record(self):
+        result = self.classify(99, "defect")
+        self.assertEqual(result.code, 2)
+        self.assertIn("no record #99", result.err)
+
+    def test_only_the_evidence_document_is_changed(self):
+        before = snapshot(self.root)
+        self.classify(3, "environment")
+        self.assert_only_evidence_changed(before)
+
+
+class ExceptionTests(RecordingCase):
+    def exception(self, kind, *extra, task="T013", vo=("VO-002",), rationale="No seam to test through"):
+        args = ["exception", "--task", task, "--kind", kind, "--rationale", rationale]
+        if vo:
+            args += ["--vo"] + list(vo)
+        return self.check(args + list(extra), self.root)
+
+    def test_exception_appends_a_row(self):
+        result = self.exception("generated-code", "--alternative", "Generator's own tests run in CI")
+        self.assertEqual((result.code, result.out), (0, "recorded EX-01 for T013\n"), result)
+        (row,) = self.rows(EX_HEADING)
+        self.assertRegex(row.pop("Time"), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertEqual(
+            row,
+            {
+                "ID": "EX-01",
+                "Task": "T013",
+                "Obligations": "VO-002",
+                "Kind": "generated-code",
+                "Rationale": "No seam to test through",
+                "Alternative verification": "Generator's own tests run in CI",
+                "Needs approval": "no",
+                "Approved by": "-",
+            },
+        )
+
+    def test_every_kind_in_the_data_model_is_accepted(self):
+        for kind in ALL_KINDS:
+            result = self.exception(kind, "--alternative", "Reviewed by hand")
+            self.assertEqual(result.code, 0, kind)
+        rows = self.rows(EX_HEADING)
+        self.assertEqual([row["Kind"] for row in rows], ALL_KINDS)
+        self.assertEqual([row["ID"] for row in rows], [f"EX-{n:02d}" for n in range(1, 11)])
+
+    def test_exception_without_a_rationale_exits_2(self):
+        result = self.check(["exception", "--task", "T013", "--kind", "migration", "--alternative", "x"], self.root)
+        self.assertEqual(result.code, 2)
+        self.assertIn("--rationale", result.err)
+        result = self.exception("migration", "--alternative", "x", rationale="  ")
+        self.assertEqual(result.code, 2)
+        self.assertIn("--rationale", result.err)
+        self.assertEqual(self.rows(EX_HEADING), [])
+
+    def test_alternative_is_required_for_every_kind_except_environment_blocked(self):
+        for kind in ALL_KINDS:
+            result = self.exception(kind)
+            if kind == "environment-blocked":
+                self.assertEqual(result.code, 0, kind)
+            else:
+                self.assertEqual(result.code, 2, kind)
+                self.assertIn(f"--alternative is required for {kind}", result.err)
+        rows = self.rows(EX_HEADING)
+        found = [(row["Kind"], row["Alternative verification"]) for row in rows]
+        self.assertEqual(found, [("environment-blocked", "-")])
+
+    def test_needs_approval_is_always_yes_for_the_kinds_beyond_the_agents_authority(self):
+        for kind in ALL_KINDS:
+            self.exception(kind, "--alternative", "Reviewed by hand")
+        for row in self.rows(EX_HEADING):
+            expected = "yes" if row["Kind"] in ALWAYS_APPROVED_KINDS else "no"
+            self.assertEqual(row["Needs approval"], expected, row["Kind"])
+
+    def test_needs_approval_is_yes_for_an_alternative_of_none(self):
+        self.exception("migration", "--alternative", "none")
+        self.exception("migration", "--alternative", "None: the data cannot be reproduced")
+        self.exception("migration", "--alternative", "Nonexistent rows are checked by hand")
+        self.assertEqual([row["Needs approval"] for row in self.rows(EX_HEADING)], ["yes", "yes", "no"])
+
+    def test_needs_approval_is_yes_when_flagged_for_any_other_kind(self):
+        self.exception("migration", "--alternative", "Dry run on a copy", "--needs-approval")
+        self.assertEqual(self.rows(EX_HEADING)[0]["Needs approval"], "yes")
+
+    def test_approved_by_can_be_given_at_once(self):
+        self.exception("legacy", "--alternative", "Characterisation run", "--approved-by", "Lee Sinclair")
+        self.assertEqual(self.rows(EX_HEADING)[0]["Approved by"], "Lee Sinclair")
+
+    def test_an_exception_with_no_obligation_is_recorded_for_the_task_alone(self):
+        self.assertEqual(self.exception("infrastructure", "--alternative", "Smoke run", task="T015", vo=()).code, 0)
+        row = self.rows(EX_HEADING)[0]
+        self.assertEqual((row["Task"], row["Obligations"]), ("T015", "-"))
+
+    def test_the_task_must_exist_and_carry_the_obligations(self):
+        result = self.exception("migration", "--alternative", "x", task="T099")
+        self.assertEqual(result.code, 2)
+        self.assertIn("task T099 is not in tasks.md", result.err)
+        result = self.exception("migration", "--alternative", "x", vo=("VO-001",))
+        self.assertEqual(result.code, 2)
+        self.assertIn("obligation VO-001 is not on task T013", result.err)
+        self.assertEqual(self.rows(EX_HEADING), [])
+
+    def test_approve_fills_approved_by_on_an_exception(self):
+        self.exception("legacy", "--alternative", "Characterisation run")
+        result = self.check(["approve", "--id", "EX-01", "--by", "Lee Sinclair"], self.root)
+        self.assertEqual((result.code, result.out), (0, "recorded approval of EX-01 by Lee Sinclair\n"), result)
+        self.assertEqual(self.rows(EX_HEADING)[0]["Approved by"], "Lee Sinclair")
+        self.assertEqual(self.check(["approve", "--id", "EX-02", "--by", "Lee"], self.root).code, 2)
+
+    def test_only_the_evidence_document_is_changed(self):
+        before = snapshot(self.root)
+        self.exception("legacy", "--alternative", "Characterisation run")
+        self.check(["approve", "--id", "EX-01", "--by", "Lee"], self.root)
+        self.assert_only_evidence_changed(before)
+
+
+class DecisionTests(RecordingCase):
+    def open(self, *tasks):
+        args = ["decision", "open", "--question", "Should an empty cart raise or return zero?", "--tasks"]
+        return self.check(args + list(tasks), self.root)
+
+    def test_decision_open_appends_an_open_decision_with_its_tasks(self):
+        result = self.open("T013", "T014")
+        self.assertEqual((result.code, result.out), (0, "recorded DN-01, holding T013, T014\n"), result)
+        (row,) = self.rows(DN_HEADING)
+        self.assertRegex(row.pop("Opened"), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertEqual(
+            row,
+            {
+                "ID": "DN-01",
+                "Question": "Should an empty cart raise or return zero?",
+                "Tasks": "T013, T014",
+                "Status": "open",
+                "Answer": "-",
+                "Decided by": "-",
+                "Resolved": "-",
+            },
+        )
+
+    def test_decision_open_refuses_an_unknown_task(self):
+        result = self.open("T013", "T099")
+        self.assertEqual(result.code, 2)
+        self.assertIn("task T099 is not in tasks.md", result.err)
+        self.assertEqual(self.rows(DN_HEADING), [])
+
+    def test_decision_resolve_records_the_answer_and_who_gave_it(self):
+        self.open("T013")
+        self.open("T014")
+        result = self.check(
+            ["decision", "resolve", "--id", "DN-02", "--answer", "Return zero", "--by", "Lee Sinclair"], self.root
+        )
+        self.assertEqual((result.code, result.out), (0, "recorded DN-02 as resolved by Lee Sinclair\n"), result)
+        first, second = self.rows(DN_HEADING)
+        self.assertEqual(first["Status"], "open")
+        found = (second["Status"], second["Answer"], second["Decided by"])
+        self.assertEqual(found, ("resolved", "Return zero", "Lee Sinclair"))
+        self.assertRegex(second["Resolved"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+    def test_decision_resolve_requires_answer_and_by(self):
+        self.open("T013")
+        for args in (["--answer", "Return zero"], ["--by", "Lee"]):
+            result = self.check(["decision", "resolve", "--id", "DN-01"] + args, self.root)
+            self.assertEqual(result.code, 2, args)
+        self.assertEqual(self.rows(DN_HEADING)[0]["Status"], "open")
+
+    def test_decision_resolve_refuses_an_unknown_or_resolved_decision(self):
+        self.open("T013")
+        resolve = ["decision", "resolve", "--answer", "Return zero", "--by", "Lee", "--id"]
+        result = self.check(resolve + ["DN-09"], self.root)
+        self.assertEqual(result.code, 2)
+        self.assertIn("no decision DN-09", result.err)
+        self.assertEqual(self.check(resolve + ["DN-01"], self.root).code, 0)
+        result = self.check(resolve + ["DN-01"], self.root)
+        self.assertEqual(result.code, 2)
+        self.assertIn("DN-01 is already resolved", result.err)
+
+    def test_only_the_evidence_document_is_changed(self):
+        before = snapshot(self.root)
+        self.open("T013")
+        self.check(["decision", "resolve", "--id", "DN-01", "--answer", "Zero", "--by", "Lee"], self.root)
+        self.assert_only_evidence_changed(before)
+
+
 if __name__ == "__main__":
     unittest.main()
