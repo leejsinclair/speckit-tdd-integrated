@@ -215,3 +215,22 @@ Two defects were found and corrected:
 - The wrappers wrote `/__SPECKIT_COMMAND_PLAN__`, which Spec Kit expanded to
   `//speckit-plan`, because the token already carries the slash. The wrappers now use the
   bare token.
+
+### User Story 2: the hard stop, scenario 3 (T052, 2026-10-10)
+
+In `<tmp>/proj`, with the feature from T038 (a Verification Plan, labelled tasks, no
+evidence) and the finished packages reinstalled. Claude Code was run with `claude -p`,
+edits accepted and the shell tool disallowed, and told not to retry or work round a
+refusal.
+
+| Step | Expected | Observed | Met |
+|------|----------|----------|-----|
+| Mark the first behaviour task (`T003`, `[VO-001]`) complete with Edit | Refused, with rule identifiers and the two ways forward; `tasks.md` unchanged | Refused. The agent was shown `G3 T003 VO-001: no valid failing-first record and no exception`, `G4 T003 VO-001: no valid passing record after its failing-first record` and the two ways forward. `tasks.md` was unchanged | Yes |
+| Write `tdd-evidence.md` with Write | Refused | Refused with "Evidence is written only by the check script" and the subcommand to use. No file was created | Yes |
+| Tick the `[NT: reason]` task (`T025`) | Succeeds without delay | Succeeded | Yes |
+| Edit an unrelated file (`README.md`) | Succeeds without delay | Succeeded | Yes |
+| `run --phase red` before any baseline | Exit 2, nothing recorded | Exit 2 with the record-a-baseline-first message; no evidence document was created | Yes |
+| `run --phase baseline --command suite` (`make test`) | Recorded, valid | `recorded #1: baseline suite: pass, valid` | Yes |
+| Write the test, then `run --phase red` on the test task `T002` with the expected failure text | Recorded as a valid failing-first record | `recorded #2: red unit-one: fail, valid`. `gate --task T002` passed; `gate --task T003` failed on G4 only | Yes |
+| Implement, then `run --phase green` on `T003` | Recorded, valid; the gate passes | `recorded #3: green unit-one: pass, valid`; `gate T003: passed` | Yes |
+| Mark `T002` and `T003` complete with Edit | Both succeed | Both succeeded | Yes |
