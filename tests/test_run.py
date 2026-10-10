@@ -1,9 +1,13 @@
 """The command runner and the evidence ledger (contracts/check-cli.md, run)."""
 
+import calendar
+import os
+import re
 import time
 import unittest
 
-from support import RunCase, records
+from fixtures.make_features import check_value, fingerprint
+from support import EVIDENCE_REL, RunCase, evidence_text, records, snapshot, table_rows, write
 
 BROKEN = "| broken | `sh tests/fixtures/bin/fake_test.sh assert` | broad | tests/fixtures/bin |"
 OTHER_TOOL = (
@@ -204,6 +208,197 @@ class OutputTests(RunCase):
         green = self.run_phase("green", "other", "--select", "good", "--task", "T012", "--vo", "VO-001")
         self.assertEqual(green.code, 0, green)
         self.assertEqual(records(self.root)[-1]["Valid"], "yes")
+
+
+class LedgerTests(RunCase):
+    """The evidence document as contracts/artefact-formats.md section 3 defines it."""
+
+    def test_first_write_creates_the_document_from_the_template(self):
+        self.assertFalse(self.has_evidence())
+        self.baseline()
+        text = evidence_text(self.root)
+        lines = text.splitlines()
+        self.assertEqual(lines[0], "# TDD Evidence: 001-demo")
+        self.assertIn("<!-- Written by tdd_check.py. Do not edit by hand: use the script's subcommands. -->", lines)
+        headings = [line for line in lines if line.startswith("## ")]
+        self.assertEqual(
+            headings,
+            [
+                "## Summary",
+                "## Baseline",
+                "## Test execution records",
+                "## Exceptions",
+                "## Expectation changes",
+                "## Decisions",
+            ],
+        )
+        for heading in ("## Exceptions", "## Expectation changes", "## Decisions"):
+            self.assertEqual(table_rows(text, heading), [])
+
+    def test_summary_carries_the_generated_on_line(self):
+        self.baseline()
+        self.assertRegex(
+            evidence_text(self.root),
+            r"## Summary\n\n_Generated from the tables below on \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\._\n",
+        )
+
+    def test_seq_is_contiguous_from_1(self):
+        self.baseline()
+        self.red()
+        self.green()
+        self.green(select="assert")
+        self.assertEqual([row["Seq"] for row in records(self.root)], ["1", "2", "3", "4"])
+
+    def test_row_cells_match_the_contract(self):
+        self.baseline()
+        self.red()
+        self.green()
+        first, second, third = records(self.root)
+        stamp = r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$"
+        self.assertRegex(first["Time"], stamp)
+        expected_first = {
+            "Seq": "1", "Task": "-", "Obligations": "-", "Phase": "baseline", "Command": "suite", "Selector": "-",
+            "Result": "pass", "Valid": "yes", "Classification": "-", "Files": "-", "Fingerprint": "-", "Note": "-",
+        }  # fmt: skip
+        self.assertEqual({key: first[key] for key in expected_first}, expected_first)
+        expected_second = {
+            "Seq": "2", "Task": "T011", "Obligations": "VO-001", "Phase": "red", "Command": "unit",
+            "Selector": "assert", "Result": "fail", "Valid": "yes", "Classification": "assertion",
+            "Files": "tests/test_cart.py", "Note": "expected: AssertionError: expected 0",
+        }  # fmt: skip
+        self.assertEqual({key: second[key] for key in expected_second}, expected_second)
+        self.assertEqual((third["Task"], third["Phase"]), ("T012", "green"))
+        self.assertEqual((third["Classification"], third["Note"]), ("-", "-"))
+        for row in (first, second, third):
+            self.assertRegex(row["Check"], r"^[0-9a-f]{6}$")
+
+    def test_several_obligations_are_listed(self):
+        tasks = "- [ ] T001 [VO-001] [VO-002] Write both tests\n- [ ] T002 [VO-001] [VO-002] Implement both\n"
+        write(self.feature(self.root), ["tasks.md"], tasks)
+        self.baseline()
+        self.run_phase(
+            "red", "unit", "--select", "assert", "--task", "T001", "--vo", "VO-001", "VO-002",
+            "--tests", "tests/test_cart.py", "--expect", "AssertionError"
+        )  # fmt: skip
+        self.assertEqual(records(self.root)[-1]["Obligations"], "VO-001, VO-002")
+
+    def test_files_are_relative_sorted_and_comma_separated(self):
+        write(self.root, ["tests", "a_test.py"], "assert True\n")
+        self.baseline()
+        absolute = os.path.join(self.root, "tests", "a_test.py")
+        result = self.run_phase(
+            "red", "unit", "--select", "assert", "--task", "T011", "--vo", "VO-001",
+            "--tests", "tests/test_cart.py", absolute, "--expect", "AssertionError"
+        )  # fmt: skip
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(records(self.root)[-1]["Files"], "tests/a_test.py, tests/test_cart.py")
+
+    def test_fingerprint_is_the_contract_hash_of_paths_and_contents(self):
+        write(self.root, ["tests", "a_test.py"], "assert True\n")
+        self.baseline()
+        self.run_phase(
+            "red", "unit", "--select", "assert", "--task", "T011", "--vo", "VO-001",
+            "--tests", "tests/test_cart.py", "tests/a_test.py", "tests/gone.py", "--expect", "AssertionError"
+        )  # fmt: skip
+        row = records(self.root)[-1]
+        self.assertEqual(row["Files"], "tests/a_test.py, tests/gone.py, tests/test_cart.py")
+        expected = fingerprint(
+            {
+                "tests/test_cart.py": b"assert total([]) == 0\n",
+                "tests/a_test.py": b"assert True\n",
+                "tests/gone.py": None,
+            }
+        )
+        self.assertEqual(row["Fingerprint"], expected)
+
+    def test_no_files_gives_a_dash_for_files_and_fingerprint(self):
+        self.baseline()
+        self.green()
+        row = records(self.root)[-1]
+        self.assertEqual((row["Files"], row["Fingerprint"]), ("-", "-"))
+
+    def test_check_chains_from_the_previous_row(self):
+        self.baseline()
+        self.red()
+        self.green(select="assert")
+        self.run_phase("checkpoint", "suite", "--note", "end of phase")
+        previous = ""
+        rows = records(self.root)
+        self.assertEqual(len(rows), 4)
+        for row in rows:
+            self.assertEqual(row["Check"], check_value(previous, row), row["Seq"])
+            previous = row["Check"]
+
+    def test_valid_red_is_classified_assertion_and_other_failures_unclassified(self):
+        self.baseline()
+        self.red()
+        self.red(select="import")
+        self.green(select="assert")
+        self.red(select="pass")
+        rows = records(self.root)
+        found = [row["Classification"] for row in rows]
+        self.assertEqual(found, ["-", "assertion", "unclassified", "unclassified", "-"])
+        self.assertTrue(rows[1]["Note"].startswith("expected:"))
+
+    def test_a_bar_or_line_break_in_supplied_text_becomes_a_space(self):
+        self.baseline()
+        self.green(extra=["--note", "first|second\nthird"])
+        self.assertEqual(records(self.root)[-1]["Note"], "first second third")
+
+    def test_a_note_is_kept_after_the_reason_the_script_gives(self):
+        self.baseline()
+        self.red(extra=["--note", "first attempt"])
+        self.assertEqual(records(self.root)[-1]["Note"], "expected: AssertionError: expected 0; first attempt")
+
+    def test_no_test_output_beyond_the_matched_text_is_stored(self):
+        self.baseline()
+        self.green(select="long")
+        self.red()
+        text = evidence_text(self.root)
+        self.assertNotIn("line 59", text)
+        self.assertNotIn("got None", text)
+
+    def test_baseline_table_lists_pre_existing_failures(self):
+        self.run_phase("baseline", "suite")
+        self.run_phase("baseline", "unit", "--select", "assert")
+        self.run_phase("baseline", "unit", "--select", "assert", "--note", "test_old_total fails")
+        rows = table_rows(evidence_text(self.root), "## Baseline")
+        self.assertEqual(
+            [(row["Seq"], row["Command"], row["Result"], row["Pre-existing failures"]) for row in rows],
+            [
+                ("1", "suite", "pass", "-"),
+                ("2", "unit", "fail", "failing before work began"),
+                ("3", "unit", "fail", "test_old_total fails"),
+            ],
+        )
+
+    def test_only_the_evidence_document_is_created_or_changed(self):
+        before = snapshot(self.root)
+        self.baseline()
+        self.red()
+        self.green()
+        after = snapshot(self.root)
+        changed = {name for name in after if before.get(name) != after[name]}
+        self.assertEqual(changed, {EVIDENCE_REL})
+        self.assertEqual(set(before) - set(after), set())
+
+    def test_a_malformed_evidence_document_is_not_written_to(self):
+        self.baseline()
+        path = os.path.join(self.root, EVIDENCE_REL)
+        broken = evidence_text(self.root).replace("| Seq | Time | Task |", "| Seq | When | Task |")
+        with open(path, "w") as handle:
+            handle.write(broken)
+        result = self.green()
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("tdd-evidence.md", result.err)
+        self.assertEqual(evidence_text(self.root), broken)
+
+    def test_time_is_utc_now(self):
+        self.baseline()
+        stamp = records(self.root)[0]["Time"]
+        self.assertTrue(re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", stamp))
+        recorded = calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+        self.assertLess(abs(time.time() - recorded), 120)
 
 
 if __name__ == "__main__":
