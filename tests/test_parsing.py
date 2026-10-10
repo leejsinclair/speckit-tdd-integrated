@@ -208,6 +208,15 @@ class TaskTests(unittest.TestCase):
         self.assertIsNone(task.kind)
         self.assertEqual(task.no_test_reason, "")
 
+    def test_task_lines_inside_a_fenced_code_block_are_not_tasks(self):
+        text = (
+            "- [ ] T001 [NT: setup] Real task\n\n## Verification labels\n\n"
+            "```markdown\n- [ ] T011 [VO-001] An example line in the conventions\n```\n\n"
+            "~~~\n- [X] T012 [VO-001] Another example\n~~~\n\n- [ ] T002 [NT: docs] Real task after the block\n"
+        )
+        tasks = parser_function("parse_tasks")(text)
+        self.assertEqual([task.id for task in tasks], ["T001", "T002"])
+
     def test_valid_minimal_kinds(self):
         tasks = parse("parse_tasks", "valid-minimal", "tasks.md")
         self.assertEqual(

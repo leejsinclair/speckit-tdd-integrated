@@ -18,7 +18,7 @@ strategy: wrap
 >
 > - **If `plan.md` has no Verification Plan**, the feature was planned before the process
 >   applied and is not under it. State this gap now and again in the Completion Report,
->   name `/__SPECKIT_COMMAND_PLAN__` as the way to bring the feature under the process,
+>   name `__SPECKIT_COMMAND_PLAN__` as the way to bring the feature under the process,
 >   and then carry on as core Spec Kit would, without verification labels and without
 >   running the check. Do not describe the feature's work as verified.
 > - **Otherwise** test tasks are not optional. This overrides the statement below that

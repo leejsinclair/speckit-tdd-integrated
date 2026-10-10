@@ -26,7 +26,7 @@ the note at the top of this command says.
 
 1. **If the feature's `plan.md` has no Verification Plan**, the feature was planned before
    the process applied and is not under it. Report that as a gap at the start of the
-   analysis report and again in its summary, name `/__SPECKIT_COMMAND_PLAN__` as the way
+   analysis report and again in its summary, name `__SPECKIT_COMMAND_PLAN__` as the way
    to bring the feature under the process, run neither check, and carry on as the core
    analysis. Do not describe the feature's work as verified.
 
@@ -48,5 +48,5 @@ the note at the top of this command says.
    it among the report's issues. When both checks exit 0, say so in one line.
 
 4. **Modify nothing.** Do not correct `plan.md` or `tasks.md` here. Name the stage that
-   corrects each finding: `/__SPECKIT_COMMAND_PLAN__` for the Verification Plan and
-   `/__SPECKIT_COMMAND_TASKS__` for the task list.
+   corrects each finding: `__SPECKIT_COMMAND_PLAN__` for the Verification Plan and
+   `__SPECKIT_COMMAND_TASKS__` for the task list.

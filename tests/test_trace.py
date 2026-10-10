@@ -4,7 +4,7 @@ import json
 import os
 import unittest
 
-from support import RepoCase, read, snapshot, write
+from support import REPO, RepoCase, read, snapshot, write
 
 PLAN_PASSED = "plan: passed\n"
 TASKS_PASSED = "tasks: passed\n"
@@ -200,6 +200,22 @@ class TasksCheckTests(TraceCase):
             "tasks-behaviour-before-test",
             "C3 VO-002: its first task T012 is a behaviour task, so no test task comes before it",
         )
+
+    def test_task_id_used_twice_fails(self):
+        root = self.repo("valid-minimal")
+        tasks = read(self.feature(root), "tasks.md") + "- [ ] T015 [US1] [NT: a second use of the id] Repeat\n"
+        write(self.feature(root), ["tasks.md"], tasks)
+        result = self.check(["tasks"], root)
+        self.assertEqual(result.code, 1)
+        self.assertIn("TASKS T015: task id is used more than once", result.out)
+
+    def test_the_label_conventions_kept_in_tasks_md_are_not_read_as_tasks(self):
+        root = self.repo("valid-minimal")
+        with open(os.path.join(REPO, "preset", "templates", "tasks-addendum.md")) as handle:
+            addendum = handle.read()
+        write(self.feature(root), ["tasks.md"], read(self.feature(root), "tasks.md") + "\n" + addendum)
+        result = self.check(["tasks"], root)
+        self.assertEqual((result.code, result.out), (0, TASKS_PASSED))
 
     def test_plan_without_the_section_is_reported_as_the_gap(self):
         root = self.repo("plan-no-section")
