@@ -147,3 +147,82 @@ def load_script():
 def fixture_text(case, name):
     with open(os.path.join(FEATURES, case, name)) as handle:
         return handle.read()
+
+
+def table_rows(text, heading):
+    """Rows of the table under ``heading`` as dicts keyed by the header row.
+
+    A plain reader for the evidence document, independent of the script's own
+    parser. Evidence cells never hold a vertical bar: the script replaces them.
+    """
+    lines = text.splitlines()
+    if heading not in lines:
+        raise AssertionError("no heading " + heading)
+    index = lines.index(heading) + 1
+    while index < len(lines) and not lines[index].startswith("|"):
+        if lines[index].startswith("#"):
+            raise AssertionError("no table under " + heading)
+        index += 1
+    table = []
+    while index < len(lines) and lines[index].startswith("|"):
+        table.append([cell.strip() for cell in lines[index].strip().strip("|").split("|")])
+        index += 1
+    if not table:
+        raise AssertionError("no table under " + heading)
+    return [dict(zip(table[0], cells)) for cells in table[2:]]
+
+
+EVIDENCE_REL = os.path.join(FEATURE_REL, "tdd-evidence.md")
+
+
+def evidence_text(root):
+    path = os.path.join(root, EVIDENCE_REL)
+    if not os.path.isfile(path):
+        raise AssertionError("no tdd-evidence.md was written")
+    with open(path) as handle:
+        return handle.read()
+
+
+def records(root):
+    return table_rows(evidence_text(root), "## Test execution records")
+
+
+class RunCase(RepoCase):
+    """A repository holding valid-minimal with no evidence yet, and helpers to record runs."""
+
+    fixture = "valid-minimal"
+
+    def setUp(self):
+        self.root = self.repo(self.fixture)
+        evidence = os.path.join(self.root, EVIDENCE_REL)
+        if os.path.isfile(evidence):
+            os.remove(evidence)
+        write(self.root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
+
+    def run_phase(self, phase, command, *extra, **kwargs):
+        return self.check(["run", "--phase", phase, "--command", command] + list(extra), self.root, **kwargs)
+
+    def baseline(self):
+        result = self.run_phase("baseline", "suite")
+        self.assertEqual(result.code, 0, result)
+        return result
+
+    def red(self, task="T011", vo="VO-001", select="assert", expect="AssertionError: expected 0", extra=()):
+        return self.run_phase(
+            "red", "unit", "--select", select, "--task", task, "--vo", vo,
+            "--tests", "tests/test_cart.py", "--expect", expect, *extra
+        )  # fmt: skip
+
+    def green(self, task="T012", vo="VO-001", select="pass", extra=()):
+        return self.run_phase("green", "unit", "--select", select, "--task", task, "--vo", vo, *extra)
+
+    def has_evidence(self):
+        return os.path.isfile(os.path.join(self.root, EVIDENCE_REL))
+
+    def add_command(self, row):
+        """Add a row to the plan's Verification commands table."""
+        plan = read(self.root, FEATURE_REL, "plan.md")
+        anchor = "| suite | `sh tests/fixtures/bin/fake_test.sh pass` | broad | tests/fixtures/bin |\n"
+        if anchor not in plan:
+            raise AssertionError("fixture plan has no suite row")
+        write(self.root, [FEATURE_REL, "plan.md"], plan.replace(anchor, anchor + row + "\n"))
