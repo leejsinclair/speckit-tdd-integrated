@@ -275,4 +275,52 @@ python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py decision 
 
 ## Traceability and review evidence
 
+A reviewer who took no part in the work must be able to say, for any requirement, whether
+it is verified, by which tests and with what result, from the feature's artefacts alone.
+
+- **The chain is requirement, obligation, task, test, record.** The plan's obligations name
+  the requirements they verify. Task labels name the obligations. Each recorded run names
+  its task, its obligations and the test it selected. Keep every link: use the obligation's
+  real id on the task and on the run.
+- **A scenario discovered during implementation is added before its test is written.** Add
+  it to the plan's obligations table with origin `discovered` and the requirements it
+  verifies, give it the next unused `VO-` id, and add its test task and behaviour task to
+  `tasks.md` with that label. Then write the test. Never leave a test that traces to no
+  obligation (FR-016).
+- **When a requirement, a design decision or the implementation changes**, update the
+  obligations, tasks and tests it affects, and rerun the `plan` and `tasks` checks. A
+  changed expectation in a test that has already had its Red run is recorded as the Test
+  integrity section says (FR-044).
+- **The evidence document is written by the script and read by people.** Its Summary shows
+  each obligation's status and everything not verified, with the reason. Status is derived
+  from the records: it is never written by hand, in the plan or anywhere else.
+- **Do not duplicate.** Do not copy test output, coverage reports or CI results into the
+  specification, the plan, the task list or the evidence. The record of a run says what
+  was run, at which point in the cycle and with what result, and no more (FR-045).
+- **Explain what a reviewer will need explained.** State the reason for each significant
+  testing decision, unexpected failure and exception in terms a developer can assess: in
+  the obligation's scenario and expected outcome, in a run's note, in an exception's
+  rationale, and in the stage's final report (FR-051, FR-054).
+
+The view is printed on demand by:
+
+```text
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py status
+```
+
 ## Fitting the project
+
+The process uses what the project already has and leaves its other controls alone.
+
+- **Use only the project's declared verification commands**, and follow the project's own
+  conventions for where tests live and how they are named (FR-049).
+- **Never install or choose a test framework** for the project, and never edit its test,
+  lint or CI configuration to make this process work. No particular language or test
+  framework is required: a run is judged by its exit status and by text in its output
+  (FR-046, FR-048).
+- **Add no check the project already runs.** Linting, static analysis, security scanning,
+  code-quality checks and CI stay in force as they were, and are not repeated here
+  (FR-050).
+- **Passing tests satisfy nothing but the tests.** Do not report passing tests as meeting
+  static analysis, security checks or any other validation the project requires. Those
+  are run and reported as the project already requires (FR-047).
