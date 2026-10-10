@@ -255,7 +255,7 @@ decisions once User Stories 3 and 4 exist
 
 ### Tests for User Story 5
 
-- [ ] T065 [P] [US5] Create fixtures `status-planned/`, `status-in-progress/`, `status-verified/`, `status-verified-by-exception/`, `status-blocked-environment/`, `status-blocked-decision/`, `status-failed/` and `status-preexisting-failure/` under `tests/fixtures/features/`
+- [X] T065 [P] [US5] Create fixtures `status-planned/`, `status-in-progress/`, `status-verified/`, `status-verified-by-exception/`, `status-blocked-environment/`, `status-blocked-decision/`, `status-failed/` and `status-preexisting-failure/` under `tests/fixtures/features/`
 - [ ] T066 [US5] Write tests in `tests/test_status.py`: each T065 fixture gives the derived status of the data model's table; `status` lists each obligation with requirements, status, selectors of its records as tests and latest result as `pass (#n)` or `fail (#n)`; it lists unverified requirements with the reason, exemptions, exceptions, expectation changes, open decisions and pre-existing failures from the baseline; an obligation with origin `discovered` is shown like any other; `status` exits 0 whenever the artefacts can be read; `status --json` carries the same content; output is identical on two runs; `status` creates or changes no file; after `run`, the Summary section of `tdd-evidence.md` holds the same table and lists, and holds nothing that is not derivable from the tables beneath it and `plan.md`
 
 ### Implementation for User Story 5

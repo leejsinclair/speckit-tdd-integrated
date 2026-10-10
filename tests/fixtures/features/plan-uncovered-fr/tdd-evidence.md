@@ -11,7 +11,7 @@ _Generated from the tables below on 2026-10-10T14:02:11Z._
 | VO-001 | FR-001, US1-AS1 | verified | assert, pass | pass (#3) |
 | VO-002 | FR-002, US1-AS2, SC-001, DC-01, EC-01 | planned | - | - |
 
-**Not verified**: FR-002 (VO-002 planned), US1-AS2 (VO-002 planned), FR-003 (exempt: see plan).
+**Not verified**: FR-002 (VO-002 planned), US1-AS2 (VO-002 planned), SC-001 (VO-002 planned), DC-01 (VO-002 planned), EC-01 (VO-002 planned), FR-003 (exempt: see plan).
 
 **Open decisions**: none. **Exceptions**: none. **Expectation changes**: none.
 

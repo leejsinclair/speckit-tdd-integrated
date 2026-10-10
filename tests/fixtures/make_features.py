@@ -255,19 +255,20 @@ TASKS = """# Tasks: Cart totals
 - [ ] T015 [US1] [NT: README wording only] Document the cart total in README.md
 """
 
-EXAMPLE_SUMMARY = """_Generated from the tables below on 2026-10-10T14:02:11Z._
-
-| Obligation | Requirements | Status | Tests | Latest result |
-|------------|--------------|--------|-------|---------------|
-| VO-001 | FR-001, US1-AS1 | verified | assert, pass | pass (#3) |
-| VO-002 | FR-002, US1-AS2, SC-001, DC-01, EC-01 | planned | - | - |
-
-**Not verified**: FR-002 (VO-002 planned), US1-AS2 (VO-002 planned), FR-003 (exempt: see plan).
-
-**Open decisions**: none. **Exceptions**: none. **Expectation changes**: none.
-
-**Pre-existing failures**: none.
-"""
+NOT_VERIFIED_VO2 = (
+    "FR-002 (VO-002 planned), US1-AS2 (VO-002 planned), SC-001 (VO-002 planned), DC-01 (VO-002 planned), "
+    "EC-01 (VO-002 planned), FR-003 (exempt: see plan)"
+)
+EXAMPLE_SUMMARY = (
+    "_Generated from the tables below on 2026-10-10T14:02:11Z._\n\n"
+    "| Obligation | Requirements | Status | Tests | Latest result |\n"
+    "|------------|--------------|--------|-------|---------------|\n"
+    "| VO-001 | FR-001, US1-AS1 | verified | assert, pass | pass (#3) |\n"
+    "| VO-002 | FR-002, US1-AS2, SC-001, DC-01, EC-01 | planned | - | - |\n\n"
+    "**Not verified**: " + NOT_VERIFIED_VO2 + ".\n\n"
+    "**Open decisions**: none. **Exceptions**: none. **Expectation changes**: none.\n\n"
+    "**Pre-existing failures**: none.\n"
+)
 
 VALID_RECORDS = [baseline(), red("T011", "VO-001"), green("T012", "VO-001")]
 
@@ -756,6 +757,61 @@ def _gate_g7_fail_none():
 def _gate_g7_pass():
     approved = exc("EX-01", "T013", "VO-002", "legacy", needs="yes", approved="Lee Sinclair")
     return _with_exception([baseline(), GREEN_2], approved)
+
+
+# ---------------------------------------------------------------------------
+# Status cases (T065): one per derived status of the data model's table
+# ---------------------------------------------------------------------------
+
+ENV_FAIL_2 = rec("T014", "VO-002", "green", "unit", "import", "fail", "no", "environment", "tests/test_cart.py", FP_A,
+                 "the test database was unreachable")  # fmt: skip
+
+
+@case("status-planned")
+def _status_planned():
+    return variant(evidence=evidence([baseline()]))
+
+
+@case("status-in-progress")
+def _status_in_progress():
+    return variant(tasks=done(TASKS, "T011"), evidence=evidence([baseline(), RED_1]))
+
+
+@case("status-verified")
+def _status_verified():
+    return variant(tasks=done(TASKS, "T011", "T012"), evidence=evidence(FIRST_CYCLE))
+
+
+@case("status-verified-by-exception")
+def _status_verified_by_exception():
+    approved = exc("EX-01", "T013", "VO-002", "legacy", needs="yes", approved="Lee Sinclair")
+    return variant(tasks=ALL_DONE, evidence=evidence([baseline(), RED_1, GREEN_1, GREEN_2], exceptions=[approved]))
+
+
+@case("status-blocked-environment")
+def _status_blocked_environment():
+    return variant(tasks=done(TASKS, "T011", "T012", "T013"), evidence=evidence(FIRST_CYCLE + [RED_2, ENV_FAIL_2]))
+
+
+@case("status-blocked-decision")
+def _status_blocked_decision():
+    return variant(
+        tasks=done(TASKS, "T011", "T012", "T013"),
+        evidence=evidence(FIRST_CYCLE + [RED_2], decisions=[dn("DN-01", "T014")]),
+    )
+
+
+@case("status-failed")
+def _status_failed():
+    return variant(tasks=done(TASKS, "T011"), evidence=evidence([baseline(), RED_1, FAILED_GREEN]))
+
+
+@case("status-preexisting-failure")
+def _status_preexisting_failure():
+    failing = baseline("fail", "test_old_total fails", command="suite")
+    change = xc("XC-01", "T012", FP_B, alters="yes", approved="Lee Sinclair")
+    records = [failing, RED_1, GREEN_CHANGED, RED_2, GREEN_2]
+    return variant(tasks=ALL_DONE, evidence=evidence(records, expectations=[change]))
 
 
 # ---------------------------------------------------------------------------
