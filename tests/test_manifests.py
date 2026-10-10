@@ -206,6 +206,71 @@ class AnalyzeWrapperTests(WrapperRules, unittest.TestCase):
     subcommands = ("plan", "tasks")
 
 
+class ImplementWrapperTests(WrapperRules, unittest.TestCase):
+    stage = "implement"
+    subcommands = ("plan", "tasks", "run", "gate")
+
+    def test_wrapper_says_evidence_is_never_edited_directly(self):
+        text, _above, _below = wrapper_parts(self.stage)
+        self.assertIn("never edit `tdd-evidence.md`", text.replace("\n", " "))
+
+    def test_wrapper_names_baseline_checkpoint_and_the_end_of_stage_gate(self):
+        text, _above, below = wrapper_parts(self.stage)
+        self.assertIn("--phase baseline", below)
+        self.assertIn("--phase checkpoint", below)
+        self.assertIn("gate --task", below)
+        self.assertIn("gate --all", below)
+
+
+class EvidenceTemplateTests(unittest.TestCase):
+    HEADINGS = {
+        "## Summary": None,
+        "## Baseline": "| Seq | Command | Result | Pre-existing failures |",
+        "## Test execution records": (
+            "| Seq | Time | Task | Obligations | Phase | Command | Selector | Result | Valid | Classification "
+            "| Files | Fingerprint | Note | Check |"
+        ),
+        "## Exceptions": (
+            "| ID | Time | Task | Obligations | Kind | Rationale | Alternative verification | Needs approval "
+            "| Approved by |"
+        ),
+        "## Expectation changes": (
+            "| ID | Time | Task | Files | Requirements | Justification | Alters behaviour | Approved by "
+            "| New fingerprint |"
+        ),
+        "## Decisions": "| ID | Opened | Question | Tasks | Status | Answer | Decided by | Resolved |",
+    }
+
+    def lines(self):
+        return read_repo("templates", "tdd-evidence-template.md").splitlines()
+
+    def test_template_holds_the_title_and_the_do_not_edit_comment(self):
+        lines = self.lines()
+        self.assertEqual(lines[0], "# TDD Evidence: <feature directory name>")
+        self.assertIn("<!-- Written by tdd_check.py. Do not edit by hand: use the script's subcommands. -->", lines)
+
+    def test_template_holds_the_six_sections_in_order(self):
+        headings = [line for line in self.lines() if line.startswith("## ")]
+        self.assertEqual(headings, list(self.HEADINGS))
+
+    def test_template_holds_the_header_rows_and_no_data_rows(self):
+        lines = self.lines()
+        for heading, header in self.HEADINGS.items():
+            if header is None:
+                continue
+            self.assertIn(heading, lines)
+            start = lines.index(heading) + 1
+            table = []
+            for line in lines[start:]:
+                if line.startswith("## "):
+                    break
+                if line.startswith("|"):
+                    table.append(line)
+            self.assertEqual(len(table), 2, heading)
+            self.assertEqual(table[0], header, heading)
+            self.assertRegex(table[1], r"^\|[-|]+\|$", heading)
+
+
 class AddendumTests(unittest.TestCase):
     def test_plan_addendum_holds_the_section_as_the_contract_defines_it(self):
         lines = [line.rstrip() for line in read_repo("preset", "templates", "plan-addendum.md").splitlines()]
