@@ -408,6 +408,94 @@ def _parse_evidence_full():
 
 
 # ---------------------------------------------------------------------------
+# plan check cases (T025)
+# ---------------------------------------------------------------------------
+
+VO1_ROW = "| VO-001 | FR-001, US1-AS1 | An empty cart is totalled | The total is zero and no error is raised | unit | planned |"
+EXEMPTION_ROW = (
+    "| FR-003 | Visual layout has no stable automated check in this project | "
+    "Reviewed against the design at code review |"
+)
+
+
+@case("plan-no-section")
+def _plan_no_section():
+    return variant(plan=swap(PLAN, "## Verification Plan", "## Testing notes"))
+
+
+@case("plan-no-commands")
+def _plan_no_commands():
+    plan = swap(PLAN, "| unit | `sh tests/fixtures/bin/fake_test.sh {select}` | focused | tests/fixtures/bin |\n", "")
+    plan = swap(plan, "| suite | `sh tests/fixtures/bin/fake_test.sh pass` | broad | tests/fixtures/bin |\n", "")
+    return variant(plan=plan)
+
+
+@case("plan-uncovered-fr")
+def _plan_uncovered_fr():
+    return variant(plan=swap(PLAN, "| VO-001 | FR-001, US1-AS1 |", "| VO-001 | US1-AS1 |"))
+
+
+@case("plan-uncovered-scenario")
+def _plan_uncovered_scenario():
+    return variant(plan=swap(PLAN, "| VO-002 | FR-002, US1-AS2, SC-001,", "| VO-002 | FR-002, SC-001,"))
+
+
+@case("plan-empty-outcome")
+def _plan_empty_outcome():
+    return variant(plan=swap(PLAN, "| The total is zero and no error is raised |", "| - |"))
+
+
+@case("plan-empty-exemption-reason")
+def _plan_empty_exemption_reason():
+    return variant(plan=swap(PLAN, "| Visual layout has no stable automated check in this project |", "| - |"))
+
+
+@case("plan-unknown-requirement")
+def _plan_unknown_requirement():
+    return variant(plan=swap(PLAN, "| VO-001 | FR-001, US1-AS1 |", "| VO-001 | FR-001, US1-AS1, FR-099 |"))
+
+
+@case("plan-unknown-prefix")
+def _plan_unknown_prefix():
+    return variant(plan=swap(PLAN, "| VO-001 | FR-001, US1-AS1 |", "| VO-001 | FR-001, US1-AS1, XX-01 |"))
+
+
+# ---------------------------------------------------------------------------
+# tasks check cases (T026)
+# ---------------------------------------------------------------------------
+
+T013_LINE = "- [ ] T013 [US1] [VO-002] Write the failing test for a cart of items in tests/test_cart.py\n"
+T014_LINE = "- [ ] T014 [US1] [VO-002] Implement the sum of item prices in src/cart.py\n"
+
+
+@case("tasks-unlabelled")
+def _tasks_unlabelled():
+    return variant(tasks=swap(TASKS, "T015 [US1] [NT: README wording only] Document", "T015 [US1] Document"))
+
+
+@case("tasks-unknown-obligation")
+def _tasks_unknown_obligation():
+    return variant(tasks=swap(TASKS, "T015 [US1] [NT: README wording only]", "T015 [US1] [VO-009]"))
+
+
+@case("tasks-obligation-without-task")
+def _tasks_obligation_without_task():
+    return variant(tasks=swap(swap(TASKS, T013_LINE, ""), T014_LINE, ""))
+
+
+@case("tasks-obligation-without-behaviour")
+def _tasks_obligation_without_behaviour():
+    return variant(tasks=swap(TASKS, T014_LINE, ""))
+
+
+@case("tasks-behaviour-before-test")
+def _tasks_behaviour_before_test():
+    # T012 is the first task to name VO-002 but not the first to name VO-001,
+    # so it is a behaviour task and VO-002 has no test task before it.
+    return variant(tasks=swap(TASKS, "T012 [US1] [VO-001] Implement", "T012 [US1] [VO-001] [VO-002] Implement"))
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
