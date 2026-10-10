@@ -17,3 +17,5 @@ ruff.toml
 speckit-overview.md
 node_modules/
 __pycache__/
+tools/
+.github/
