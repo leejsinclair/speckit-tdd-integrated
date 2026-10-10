@@ -126,5 +126,54 @@ not weaken it to pass.
    Until then the task stays incomplete (G8). Continue with tasks that do not depend on
    it.
 
+### Failures, exceptions and decisions
+
+Follow "Failures, exceptions and decisions" in the process rules. In this stage:
+
+1. **Classify each failure after investigating it.** A run that fails, other than a valid
+   Red step, is recorded as `unclassified`. Find the cause, then record what it is:
+
+   ```bash
+   python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py classify --seq <record number> \
+       --as <assertion|defect|environment|unreliable> --note "<what was found>"
+   ```
+
+   Resolve the failure before starting work that depends on it. An `environment` failure
+   blocks the obligation; an `unreliable` test is reported as unreliable and is not rerun
+   until it passes.
+
+2. **Record an exception where the cycle does not fit the work**, with the rationale and
+   the verification followed instead:
+
+   ```bash
+   python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py exception --task <task id> --vo <obligation id> \
+       --kind <kind> --rationale "<why>" --alternative "<how it is verified instead>"
+   ```
+
+   The passing run is still required of the behaviour task. Exceptions of kind `legacy`,
+   `exploratory` or `other`, and any with no alternative verification, need the
+   developer's approval: explain the trade-off, ask, and record
+   `approve --id <EX-nn> --by "<name>"` only after the developer has approved in the
+   conversation. Give `--needs-approval` for any other exception that involves a
+   consequential trade-off.
+
+3. **Open a decision when work must wait for a person**, listing the affected task and
+   every task that depends on it:
+
+   ```bash
+   python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py decision open \
+       --question "<what is to be decided>" --tasks <task id> <task id>
+   ```
+
+   Hold only the tasks listed and continue with the others. Never proceed on an assumed
+   answer. When every remaining task depends on an open decision, stop and report. When
+   the developer answers, record `decision resolve --id <DN-nn> --answer "<answer>"
+   --by "<name>"` and resume.
+
+4. **Report blocked and failed items as what they are.** In every progress report and in
+   the Completion Report, list each blocked test, unresolved failure, exception and open
+   decision, with the tasks held back. Never describe such work as verified, and leave its
+   tasks unmarked.
+
 Routine cycles involve no approval request to the developer. Never edit `tdd-evidence.md`
 directly, and never copy test output into the artefacts.
