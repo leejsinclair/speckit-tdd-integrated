@@ -1,0 +1,43 @@
+schema_version: "1.0"
+
+preset:
+  id: "c4-model"
+  name: "C4 Model Planning"
+  version: "0.2.0"
+  description: "Makes the plan workflow produce C4 component, sequence and ER diagrams, and links spec.md and plan.md to the architecture views"
+  author: "Lee Sinclair"
+  repository: "https://github.com/leejsinclair/speckit-c4Model"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=1.0.0"
+  # Supplies the diagram templates and conventions this preset points at, and the
+  # speckit.c4.* commands. Install it first: a missing extension only warns.
+  extensions:
+    - "c4"
+
+provides:
+  templates:
+    - type: "template"
+      name: "spec-template"
+      file: "preset/templates/spec-addendum.md"
+      description: "Adds a System Context section linking the spec to the C4 context view"
+      strategy: "append"
+
+    - type: "template"
+      name: "plan-template"
+      file: "preset/templates/plan-addendum.md"
+      description: "Adds an Architecture section linking the plan to the feature and system views"
+      strategy: "append"
+
+    - type: "command"
+      name: "speckit.plan"
+      file: "preset/commands/speckit.plan.md"
+      description: "Wrap /plan to generate architecture.md with C4 component, sequence and ER diagrams in Phase 1"
+      strategy: "wrap"
+
+tags:
+  - "c4"
+  - "architecture"
+  - "diagrams"
+  - "mermaid"

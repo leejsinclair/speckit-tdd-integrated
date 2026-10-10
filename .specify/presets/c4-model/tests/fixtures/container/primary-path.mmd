@@ -1,0 +1,23 @@
+C4Container
+    title Container View for [SYSTEM NAME]
+
+    Person(customer, "Customer", "Buys products through the storefront")
+
+    System_Boundary(system, "[SYSTEM NAME]") {
+        Container(webApp, "Web App", "TypeScript, React", "Storefront and checkout user interface")
+        Container(orderApi, "Order API", "TypeScript, Fastify", "Handles catalogue queries and order placement")
+        ContainerDb(ordersDb, "Orders Database", "PostgreSQL 16", "Stores customers, products and orders")
+        ContainerQueue(eventBus, "Event Bus", "RabbitMQ", "Carries order lifecycle events")
+        Container(notifier, "Notification Worker", "TypeScript, Node.js", "Turns order events into customer messages")
+    }
+
+    System_Ext(paymentProvider, "Payment Provider", "Authorises and captures card payments")
+    System_Ext(emailService, "Email Service", "Delivers transactional email")
+
+    Rel(customer, webApp, "Browses and checks out using", "HTTPS")
+    Rel(webApp, orderApi, "Calls", "JSON/HTTPS")
+    Rel(orderApi, ordersDb, "Reads from and writes to", "SQL/TCP")
+    Rel(orderApi, paymentProvider, "Requests payment authorisation from", "JSON/HTTPS")
+    Rel(orderApi, eventBus, "Publishes order events to", "AMQP")
+    Rel(notifier, eventBus, "Consumes order events from", "AMQP")
+    Rel(notifier, emailService, "Sends email through", "JSON/HTTPS")

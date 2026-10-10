@@ -1,0 +1,13 @@
+preset/
+preset.yml
+.git/
+.gitignore
+.githooks/
+.github/
+scripts/setup-dev.sh
+prompts/
+tests/
+__pycache__/
+ruff.toml
+bandit.yml
+.markdownlint-cli2.yaml

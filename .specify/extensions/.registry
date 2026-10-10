@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "c4": {
+      "version": "0.2.0",
+      "source": "local",
+      "manifest_hash": "sha256:e5f95fa9c2faedf3651aaf0e320e37a7fb7dd58b5a9d1245b85e21a1972d0c44",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.c4.system",
+          "speckit.c4.feature",
+          "speckit.c4.validate"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-10-10T05:37:01.336586+00:00"
+    },
+    "know-your-spec": {
+      "version": "1.1.2",
+      "source": "local",
+      "manifest_hash": "sha256:66a591beeb42a152362da7c68cedf4d75659662e77666c0ed94910ace32ed508",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.know-your-spec.check",
+          "speckit.kys-check"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-10-10T05:45:29.668477+00:00"
+    }
+  }
+}

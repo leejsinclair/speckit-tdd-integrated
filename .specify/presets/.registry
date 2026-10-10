@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "presets": {
+    "c4-model": {
+      "version": "0.2.0",
+      "source": "local",
+      "manifest_hash": "sha256:8e642cc5358340c2c55155e43a9663c04762b0870890a0b608c1f3aacbe1313f",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.plan"
+        ]
+      },
+      "registered_skills": {
+        "claude": [
+          "speckit-plan"
+        ]
+      },
+      "installed_at": "2026-10-10T05:37:02.215432+00:00"
+    }
+  }
+}

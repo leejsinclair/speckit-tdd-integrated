@@ -1,0 +1,60 @@
+# Know Your Spec's own extension manifest — the actual artifact `specify extension add
+# know-your-spec` (or `specify extension add --dev .` during development) installs from.
+#
+# This is the live source of truth for the shipped extension; specs/001-know-your-spec/
+# contracts/extension.yml is the design-phase copy this was created from and is kept for
+# traceability, not read by anything at runtime.
+#
+# Schema confirmed against the installed Spec Kit CLI's own validation source
+# (specify_cli/extensions/__init__.py) and the official extensions/template scaffold — see
+# research.md §1-2, §9 for the evidence trail.
+
+schema_version: "1.0"
+
+extension:
+  id: "know-your-spec"
+  name: "Know Your Spec"
+  version: "1.1.2"
+  description: "A Comprehension Checkpoint for Spec Kit: quizzes the developer on a finished spec.md, one question at a time across five fixed difficulty levels, judged semantically and coached until understood — nothing is ever persisted to the repo"
+  author: "Lee Sinclair"
+  repository: "https://github.com/leejsinclair/speckit-preset-know-your-spec"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=1.0.0"
+  # No external services. python3 is optional: it runs the read-only spec page only, and without
+  # it the checkpoint is unchanged (research.md §15).
+  tools:
+    - name: "python3"
+      required: false
+
+# Primary command name follows speckit.<ext-id>.<cmd>; aliases are free-form (research.md §2).
+provides:
+  commands:
+    - name: "speckit.know-your-spec.check"
+      file: "commands/speckit.know-your-spec.check.md"
+      description: "Comprehension Checkpoint: five questions on spec.md's established content, one at a time, fixed increasing difficulty (Recognise/Explain/Apply/Trace/Evaluate), coached retries with no attempt cap, explicit per-question skip/reveal, session-only — nothing persisted"
+      aliases: ["speckit.kys-check"]
+
+  # The read-only spec page (research.md §15): standard library only, serves spec.md to the
+  # developer's browser (every interface, behind a one-time key) and writes nothing to the repository.
+  scripts:
+    - name: "specpage"
+      file: "scripts/python/specpage.py"
+      description: "Serves the active feature's spec.md as a read-only page in the browser"
+
+  # No config and no templates (research.md §5).
+
+# Fires automatically with no confirmation prompt — this is deliberate (research.md §3): the
+# automatic, unprompted nature of the checkpoint is the feature's value proposition.
+hooks:
+  after_specify:
+    command: "speckit.know-your-spec.check"
+    optional: false
+    description: "Run the five-question Comprehension Checkpoint immediately after a spec is finished"
+
+tags:
+  - "quality"
+  - "specification"
+  - "comprehension"
+  - "education"

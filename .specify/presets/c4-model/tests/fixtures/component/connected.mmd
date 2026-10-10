@@ -1,0 +1,21 @@
+C4Component
+    title Component View for Order API - [FEATURE NAME]
+
+    Container(webApp, "Web App", "TypeScript, React", "Storefront and checkout user interface")
+
+    Container_Boundary(orderApi, "Order API") {
+        Component(orderService, "Order Service", "TypeScript module", "Applies ordering rules and coordinates payment")
+        Component(orderController, "Order Controller", "Fastify route", "Validates and routes order requests")
+        Component(paymentGateway, "Payment Gateway", "TypeScript module", "Wraps the payment provider API")
+        Component(orderRepository, "Order Repository", "TypeScript, Kysely", "Persists and loads orders")
+    }
+
+    ContainerDb(ordersDb, "Orders Database", "PostgreSQL 16", "Stores customers, products and orders")
+    System_Ext(paymentProvider, "Payment Provider", "Authorises and captures card payments")
+
+    Rel(webApp, orderController, "Submits orders to", "JSON/HTTPS")
+    Rel(orderController, orderService, "Delegates to")
+    Rel(orderService, paymentGateway, "Authorises payment through")
+    Rel(orderService, orderRepository, "Saves orders using")
+    Rel(paymentGateway, paymentProvider, "Calls", "JSON/HTTPS")
+    Rel(orderRepository, ordersDb, "Reads from and writes to", "SQL/TCP")

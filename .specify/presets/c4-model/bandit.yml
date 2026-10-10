@@ -1,0 +1,3 @@
+# Security lint settings for the Python in scripts/ and tests/.
+# Run: uvx bandit -c bandit.yml -r scripts tests
+exclude_dirs: [".claude", "insights", "prompts", "tests/fixtures"]
