@@ -310,3 +310,53 @@ the hook (`test_hook.py`), status and the Summary (`test_status.py`), compliance
 two example runs (`test_compliance.py`), manifests, wrappers and templates
 (`test_manifests.py`), the common command line and the standard-library-only rule
 (`test_cli.py`) and the time limits (`test_performance.py`).
+
+### Replay of the Red-before-Green history (T090, 2026-10-10)
+
+For each commit whose message lists failing tests, the commit was checked out into a
+temporary `git worktree`, the suite was run with
+`python3 -B -m unittest discover -s tests`, and the failing tests were compared with the
+commit message. Then the history was walked forward to the first commit at which the named
+tests all pass, and they were run there. 19 commits list failing tests; T083's tests are
+not fail-first by recorded exception.
+
+| Test task | Red commit | Message and replay | Implementation commit | Named tests there |
+|-----------|------------|--------------------|-----------------------|-------------------|
+| T008 | `b6a3380` | 12 run, FAILED (failures=12) | `f1cd718` | 12 tests pass |
+| T009 | `26f80aa` | 25 run, FAILED (failures=25) | `f1cd718` | 25 tests pass |
+| T010 | `c3397bb` | 33 run, FAILED (failures=33) | `f1cd718` | 33 tests pass |
+| T022 | `df1025c` | 68 run, FAILED (failures=35) | `a631583` | 35 tests pass |
+| T027 | `e53c1f7` | 90 run, FAILED (failures=21) | `2de3da5` | 21 tests pass |
+| T028 | `71f5133` | 102 run, FAILED (failures=32) | `ed656ba` | 32 tests pass |
+| T029 | `e9d41be` | 124 run, FAILED (failures=49) | `9f53d20` | 49 tests pass |
+| found in T038 | `3fded87` | 127 run, FAILED (failures=2) | `268f62b` | 2 tests pass |
+| T039 | `9805135` | 153 run, FAILED (failures=26) | `a77df33` | 26 tests pass |
+| T040 | `17c736a` | 170 run, FAILED (failures=43) | `a77df33` | 43 tests pass |
+| T042 | `47e9677` | 192 run, FAILED (failures=63) | `005ef72` | 63 tests pass |
+| T043 | `07129f4` | 227 run, FAILED (failures=76) | `28c18bf` | 76 tests pass |
+| T044 | `ad4dc43` | 238 run, FAILED (failures=86) | `0f6c083` | 86 tests pass |
+| T053 | `90599b4` | 256 run, FAILED (failures=14) | `6a25ad8` | 14 tests pass |
+| T054 | `8342b9b` | 265 run, FAILED (failures=18) | `139682d` | 18 tests pass |
+| T059 | `aec3dae` | 290 run, FAILED (failures=21, errors=3) | `504f4be` | 24 tests pass |
+| T060 | `c8a6918` | 313 run, FAILED (failures=37, errors=3) | `ffdcaf5` | 40 tests pass |
+| T066 | `cdef716` | 342 run, FAILED (failures=26, errors=1) | `6eef52f` | 27 tests pass |
+| T077 | `157564e` | 372 run, FAILED (failures=25, errors=1) | `d85dbeb` | 26 tests pass |
+
+Result:
+
+- **18 of 19** Red commits replay exactly: the same tests fail, the same run summary line.
+  The compared evidence is the set of failing test names and the summary line. The per-test
+  reason text in each message was not compared.
+- **One mismatch, `157564e` (T077).** The message lists 26 failing tests and a clean
+  checkout has 28. The two extra, `test_compliance_writes_nothing_to_the_example_runs` and
+  `test_two_runs_give_byte_identical_output`, passed in the working tree because empty
+  `examples/runs/compliant` and `examples/runs/tests-only` directories existed there
+  (created at T001), and git does not track empty directories. With an empty run directory
+  those two tests passed vacuously. The message was true of the working tree and not of the
+  commit. History was not rewritten: the tests were corrected in a later commit (`0e9d292`)
+  so that they fail when the run's artefacts are missing, and this entry is the record.
+- Each named set of tests passes at a later commit, and at the commit its message or task
+  list names, except that the tests of T008, T009 and T010 first pass together at T015,
+  where the placeholder files complete the packages, and the ledger tests of T040 first
+  pass at the runner commit (T047), not at the ledger commit (T046): the ledger has no
+  caller until `run` exists.
