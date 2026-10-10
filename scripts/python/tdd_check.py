@@ -1721,6 +1721,130 @@ def cmd_status(args, root, feature_dir):
 
 
 # ---------------------------------------------------------------------------
+# compliance: rules C1 to C7 on a finished feature. An evaluation aid, not a
+# step in normal work: no lifecycle command runs it.
+# ---------------------------------------------------------------------------
+
+
+def rule_c4(evidence):
+    """The chain of check values in the record table is intact."""
+    findings = []
+    previous = ""
+    for position, record in enumerate(evidence.records, 1):
+        subject = f"#{record.seq}"
+        if record.seq != position:
+            findings.append(Finding("C4", subject, f"sequence is not contiguous: row {position} of the table"))
+        if record.check != check_value(previous, record.cells):
+            findings.append(
+                Finding(
+                    "C4",
+                    subject,
+                    "the check value does not match the row: the record was changed after it was written",
+                )
+            )
+        previous = record.check
+    return findings
+
+
+def rule_c5(feature):
+    """Every completed task passes G1 to G9."""
+    findings = []
+    for task in feature.tasks:
+        if not task.complete:
+            continue
+        for found in gate_task(task, feature):
+            findings.append(Finding("C5", found.subject, f"{found.rule}: {found.reason}"))
+    return findings
+
+
+def stored_summary(evidence):
+    """The Summary as stored, without its generated-on line."""
+    if evidence.text is None or SUMMARY_HEADING not in evidence.text:
+        return ""
+    section = evidence.text.split(SUMMARY_HEADING, 1)[1].split("\n" + BASELINE_HEADING, 1)[0]
+    lines = [line for line in section.strip().splitlines() if not line.startswith("_Generated from the tables below")]
+    return "\n".join(lines).strip()
+
+
+def rule_c6(evidence):
+    """A baseline comes first, and the latest checkpoint passed or its failure is pre-existing and reported."""
+    records = evidence.records
+    if not any(record.phase == "baseline" for record in records):
+        return [Finding("C6", EVIDENCE_FILE, "no baseline record")]
+    findings = []
+    if records[0].phase != "baseline":
+        findings.append(Finding("C6", f"#{records[0].seq}", "the first record is not a baseline"))
+    checkpoints = [record for record in records if record.phase == "checkpoint"]
+    if not checkpoints:
+        findings.append(Finding("C6", EVIDENCE_FILE, "no checkpoint record"))
+        return findings
+    latest = checkpoints[-1]
+    if counts(latest):
+        return findings
+    subject = f"#{latest.seq}"
+    if latest.result == "pass":
+        findings.append(Finding("C6", subject, "the latest checkpoint was not made with a broad command"))
+        return findings
+    failed_before = [
+        record
+        for record in records
+        if record.phase == "baseline" and record.command == latest.command and record.result == "fail"
+    ]
+    if not failed_before:
+        findings.append(
+            Finding("C6", subject, f"the latest checkpoint failed and the baseline of {latest.command} passed")
+        )
+    elif not any(f"#{record.seq} {record.command}:" in stored_summary(evidence) for record in failed_before):
+        findings.append(
+            Finding(
+                "C6",
+                subject,
+                f"the latest checkpoint failed as the baseline of {latest.command} did, "
+                "and the Summary does not report the failure as pre-existing",
+            )
+        )
+    return findings
+
+
+def rule_c7(feature):
+    """No obligation is planned or in progress, and the stored Summary is the regenerated view."""
+    view = review_view(feature)
+    findings = [
+        Finding("C7", row["id"], f"status is {row['status']}")
+        for row in view["obligations"]
+        if row["status"] in ("planned", "in progress")
+    ]
+    if feature.evidence.text is not None and stored_summary(feature.evidence) != "\n".join(view_lines(view)).strip():
+        findings.append(
+            Finding(
+                "C7",
+                EVIDENCE_FILE,
+                "the Summary is out of date: it differs from the view regenerated from plan.md and the tables",
+            )
+        )
+    return findings
+
+
+def cmd_compliance(args, root, feature_dir):
+    """Report a finished feature as COMPLIANT or NON-COMPLIANT, with the reasons."""
+    spec = parse_spec(require_text(feature_dir, SPEC_FILE))
+    feature = load_feature(feature_dir)
+    findings = check_plan(spec, feature.plan)
+    if feature.plan.has_section:
+        findings.extend(duplicate_task_ids(feature.tasks))
+        findings.extend(unknown_obligations(feature.plan, feature.tasks))
+        findings.extend(rule_c2_c3(feature.plan, feature.tasks))
+        findings.extend(feature.evidence.findings)
+        if not feature.evidence.findings:
+            findings.extend(rule_c4(feature.evidence))
+            findings.extend(rule_c5(feature))
+            findings.extend(rule_c6(feature.evidence))
+            findings.extend(rule_c7(feature))
+    verdict_text = "NON-COMPLIANT" if findings else "COMPLIANT"
+    return (EXIT_FAIL if findings else EXIT_OK), findings, [verdict_text], {"verdict": verdict_text}
+
+
+# ---------------------------------------------------------------------------
 # hook: the runtime event handler
 # ---------------------------------------------------------------------------
 
@@ -1987,6 +2111,7 @@ HANDLERS = {
     "run": cmd_run,
     "gate": cmd_gate,
     "status": cmd_status,
+    "compliance": cmd_compliance,
     "expectation": cmd_expectation,
     "approve": cmd_approve,
     "classify": cmd_classify,
