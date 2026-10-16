@@ -996,6 +996,13 @@ def render_evidence(feature_dir, evidence, now):
         + render_table(EXPECTATIONS_HEADER, [item.cells for item in evidence.expectations]) + "\n"
         + DECISIONS_HEADING + "\n\n" + render_table(DECISIONS_HEADER, [item.cells for item in evidence.decisions])
     )  # fmt: skip
+    if evidence.item_baseline or evidence.item_changes or checklist_applies(feature_dir):
+        tables += (
+            "\n" + ITEM_BASELINE_HEADING + "\n\n"
+            + render_table(ITEM_BASELINE_HEADER, [item.cells for item in evidence.item_baseline]) + "\n"
+            + ITEM_CHANGES_HEADING + "\n\n"
+            + render_table(ITEM_CHANGES_HEADER, [item.cells for item in evidence.item_changes])
+        )  # fmt: skip
     # The Summary is derived from the tables as they are about to be written.
     body = summary_body(feature_dir, parse_evidence(tables))
     summary = f"_Generated from the tables below on {now}._\n" + ("\n" + body if body else "")
@@ -1207,11 +1214,53 @@ def require_passing_checklist(feature_dir, plan):
         )
 
 
+def require_linked_obligations(feature_dir, obligations):
+    """Refuse a Red run for an obligation that no behaviour item names."""
+    if not obligations or not checklist_applies(feature_dir):
+        return
+    text = read_checklist(feature_dir)
+    if text is None:
+        return
+    named = {entry for item in parse_checklist(text).items for entry in item.verified_by}
+    for obligation in obligations:
+        if obligation not in named:
+            raise UsageError(
+                f"{obligation}: no behaviour item names it; add it to an existing or new item first "
+                f"in {CHECKLIST_REL}, then rerun the plan check. Nothing was recorded."
+            )
+
+
+def fix_new_items(feature_dir, evidence, seq):
+    """Add an Item Baseline row for each checklist item that has none, with the sequence number given."""
+    if not checklist_applies(feature_dir):
+        return
+    text = read_checklist(feature_dir)
+    if text is None:
+        return
+    fixed = {row.item for row in evidence.item_baseline}
+    for item in parse_checklist(text).items:
+        if item.id in fixed:
+            continue
+        fixed.add(item.id)
+        cells = {
+            "Item": item.id,
+            "Verified by": join_cell(item.verified_by),
+            "Fingerprint": item_fingerprint(item),
+            "Seq": str(seq),
+        }
+        row = Item(
+            item=item.id, verified_by=list(item.verified_by), fingerprint=cells["Fingerprint"], seq=seq, cells=cells
+        )
+        evidence.item_baseline.append(row)
+
+
 def cmd_run(args, root, feature_dir):
     plan = require_plan(feature_dir)
     command = validate_run(args, plan, feature_dir)
     if args.phase == "baseline":
         require_passing_checklist(feature_dir, plan)
+    if args.phase == "red":
+        require_linked_obligations(feature_dir, args.vo)
     evidence = open_ledger(feature_dir)
     if args.phase != "baseline":
         require_baseline(evidence)
@@ -1242,6 +1291,7 @@ def cmd_run(args, root, feature_dir):
             "Note": clean(note),
         },
     )
+    fix_new_items(feature_dir, evidence, record.seq)
     write_evidence(feature_dir, evidence)
 
     tail = output.splitlines()[-OUTPUT_TAIL:]
@@ -1271,8 +1321,61 @@ def next_id(prefix, items):
     return f"{prefix}-{len(items) + 1:02d}"
 
 
+def accepted(change):
+    """A change record is accepted when it alters no behaviour, or has an approval."""
+    return not change.alters_behaviour or bool(change.approved_by)
+
+
+def cmd_item_change(args, root, feature_dir):
+    """Record a change to, or the removal of, a behaviour item fixed at the baseline."""
+    require_plan(feature_dir)
+    evidence = open_ledger(feature_dir)
+    text = read_checklist(feature_dir)
+    if text is None:
+        raise UsageError(f"cannot read {CHECKLIST_REL}: the file does not exist or cannot be read")
+    current = {}
+    for item in parse_checklist(text).items:
+        current.setdefault(item.id, item)
+    row = next((entry for entry in evidence.item_baseline if entry.item == args.item), None)
+    if row is None:
+        raise UsageError(
+            f"{args.item} has no row in '{ITEM_BASELINE_HEADING}': items are fixed at the first recorded run; "
+            "nothing was recorded"
+        )
+    records = [change for change in evidence.item_changes if change.item == args.item]
+    removed = any(change.new_fingerprint == "removed" and accepted(change) for change in records)
+    item = current.get(args.item)
+    if removed and item is not None:
+        raise UsageError(
+            f"{args.item}: its id is reused after an accepted removal and no record accepts that; "
+            "give the new behaviour a new id. Nothing was recorded"
+        )
+    fingerprint_now = "removed" if item is None else item_fingerprint(item)
+    fixed = {row.fingerprint} | {change.new_fingerprint for change in records if accepted(change)}
+    if fingerprint_now in fixed or (item is None and removed):
+        raise UsageError(
+            f"{args.item} is unchanged since the baseline or its change is already recorded; nothing was recorded"
+        )
+    ident = next_id("BX", evidence.item_changes)
+    cells = {
+        "ID": ident,
+        "Time": utc_now(),
+        "Item": args.item,
+        "Requirements": join_cell([clean(entry) for entry in args.requirement]),
+        "Justification": clean(args.justification),
+        "Alters behaviour": "yes" if args.alters_behaviour else "no",
+        "Approved by": clean(args.approved_by),
+        "New fingerprint": fingerprint_now,
+    }
+    evidence.item_changes.append(Item(id=ident, cells=cells))
+    write_evidence(feature_dir, evidence)
+    return EXIT_OK, [], [f"recorded {ident} for {args.item}"], {"id": ident}
+
+
 def cmd_expectation(args, root, feature_dir):
     """Record a change to a test made after its failing-first run, with the files' new fingerprint."""
+    if args.item:
+        return cmd_item_change(args, root, feature_dir)
     require_plan(feature_dir)
     task = find_task(parse_tasks(require_text(feature_dir, TASKS_FILE)), args.task)
     evidence = open_ledger(feature_dir)
@@ -1298,7 +1401,8 @@ def cmd_approve(args, root, feature_dir):
     """Record a person's approval. The name is recorded as given and cannot be verified."""
     require_plan(feature_dir)
     evidence = open_ledger(feature_dir)
-    entry = next((item for item in evidence.expectations + evidence.exceptions if item.id == args.id), None)
+    recorded = evidence.expectations + evidence.exceptions + evidence.item_changes
+    entry = next((item for item in recorded if item.id == args.id), None)
     if entry is None:
         raise UsageError(f"no entry {args.id} in {evidence.name}; nothing was recorded")
     if entry.cells["Approved by"] != "-":
@@ -1978,7 +2082,38 @@ def gate_g9(task, feature):
 
 
 # In rule order.
-GATE_RULES = [gate_g1, gate_g2, gate_g3, gate_g4, gate_g5, gate_g6, gate_g7, gate_g8, gate_g9]
+def gate_g10(task, feature):
+    """A behaviour item fixed at the baseline has not changed, or its change is recorded and accepted."""
+    analysis = analyse_items(feature)
+    if analysis is None:
+        return []
+    return [
+        Finding("G10", f"{task.id} {problem.item}", problem_reason(problem))
+        for problem in analysis.problems
+        if set(problem.verified_by) & set(task.obligations)
+    ]
+
+
+def baseline_recorded(evidence):
+    return any(record.phase == "baseline" for record in evidence.records)
+
+
+def gate_g11(task, feature):
+    """Once the baseline is recorded, the behaviour checklist still passes the checks that plan applies."""
+    if not baseline_recorded(feature.evidence) or not checklist_applies(feature.dir):
+        return []
+    if not hasattr(feature, "_checklist_findings"):
+        spec_text = read_text(os.path.join(feature.dir, SPEC_FILE))
+        feature._checklist_findings = (
+            [] if spec_text is None else checklist_plan_findings(feature.dir, parse_spec(spec_text), feature.plan)
+        )
+    return [
+        Finding("G11", f"{task.id} {found.subject}", f"{found.rule}: {found.reason}")
+        for found in feature._checklist_findings
+    ]
+
+
+GATE_RULES = [gate_g1, gate_g2, gate_g3, gate_g4, gate_g5, gate_g6, gate_g7, gate_g8, gate_g9, gate_g10, gate_g11]
 
 
 def gate_task(task, feature):
@@ -2036,6 +2171,7 @@ def cmd_gate(args, root, feature_dir):
 # ---------------------------------------------------------------------------
 
 SUMMARY_HEADER = ["Obligation", "Requirements", "Status", "Tests", "Latest result"]
+ITEM_HEADER = ["Behaviour item", "Scenario", "Obligations", "Status", "Tests"]
 
 
 def exception_complete(exception):
@@ -2085,6 +2221,128 @@ def obligation_status(obligation, feature):
     return "in progress" if mine or naming else "planned"
 
 
+ITEM_STATES = ("verified", "failed", "blocked", "in progress", "planned")
+
+
+def item_status(entries, statuses):
+    """The derived status of a behaviour item from the statuses of the obligations it names."""
+    obligations = [statuses.get(entry, "planned") for entry in entries if OBLIGATION_ID.match(entry)]
+    if not obligations:
+        return "exempt" if entries else "planned"
+    if all(status == "verified" for status in obligations):
+        return "verified"
+    for status in ("failed", "blocked"):
+        if status in obligations:
+            return status
+    if any(status in ("in progress", "verified") for status in obligations):
+        return "in progress"
+    return "planned"
+
+
+def analyse_items(feature):
+    """What the checklist says now against what was fixed at the baseline: statuses-ready items and problems.
+
+    Returns None when the checklist rules do not apply or the checklist cannot be read.
+    """
+    if not hasattr(feature, "_items"):
+        feature._items = _analyse_items(feature)
+    return feature._items
+
+
+def _analyse_items(feature):
+    if not checklist_applies(feature.dir):
+        return None
+    text = read_checklist(feature.dir)
+    if text is None:
+        return None
+    checklist = parse_checklist(text)
+    current = {}
+    for item in checklist.items:
+        current.setdefault(item.id, item)
+    baseline = {}
+    for row in feature.evidence.item_baseline:
+        baseline.setdefault(row.item, row)
+    problems = []
+    for ident, row in baseline.items():
+        records = [change for change in feature.evidence.item_changes if change.item == ident]
+        removed = any(change.new_fingerprint == "removed" and accepted(change) for change in records)
+        item = current.get(ident)
+        if item is not None:
+            if removed:
+                names = row.verified_by + item.verified_by
+                problems.append(Item(item=ident, kind="reused", record=None, verified_by=names))
+                continue
+            fixed = {row.fingerprint} | {change.new_fingerprint for change in records if accepted(change)}
+            fingerprint_now = item_fingerprint(item)
+            if fingerprint_now in fixed:
+                continue
+            waiting = [change for change in records if change.new_fingerprint == fingerprint_now]
+            kind, record = ("awaiting", waiting[0]) if waiting else ("changed", None)
+            problems.append(Item(item=ident, kind=kind, record=record, verified_by=row.verified_by + item.verified_by))
+        elif not removed:
+            waiting = [change for change in records if change.new_fingerprint == "removed"]
+            kind, record = ("awaiting", waiting[0]) if waiting else ("removed", None)
+            problems.append(Item(item=ident, kind=kind, record=record, verified_by=list(row.verified_by)))
+    return Item(checklist=checklist, items=checklist.items, current=current, baseline=baseline, problems=problems)
+
+
+PROBLEM_REASONS = {
+    "changed": "changed since the baseline and no change is recorded",
+    "removed": "removed since the baseline and no removal is recorded",
+    "reused": "removed since the baseline and its id is reused",
+}
+
+
+def problem_reason(problem):
+    if problem.kind == "awaiting":
+        return f"change {problem.record.id} alters behaviour and awaits approval"
+    return PROBLEM_REASONS[problem.kind]
+
+
+def item_change_entries(feature, analysis):
+    """Item change records with their state, then the changes with no record."""
+    entries = []
+    for change in feature.evidence.item_changes:
+        text = f"{change.id} on {change.item}"
+        if change.new_fingerprint == "removed":
+            text += ", removed"
+        if change.alters_behaviour:
+            approval = f"approved by {change.approved_by}" if change.approved_by else "awaiting approval"
+            text += f", alters behaviour ({approval})"
+            state = "approved" if change.approved_by else "awaiting approval"
+        else:
+            text += " (recorded)"
+            state = "recorded"
+        entries.append({"id": change.id, "item": change.item, "state": state, "text": text})
+    unrecorded = {"changed": "changed, not recorded", "removed": "removed, not recorded", "reused": "id reused"}
+    for problem in analysis.problems:
+        if problem.kind in unrecorded:
+            state = unrecorded[problem.kind]
+            entries.append({"id": "-", "item": problem.item, "state": state, "text": f"{problem.item} {state}"})
+    return entries
+
+
+def item_rows(feature, analysis, obligations):
+    """One row per checklist item with its derived status, for the view."""
+    statuses = {row["id"]: row["status"] for row in obligations}
+    tests = {row["id"]: row["tests"] for row in obligations}
+    rows = []
+    for section in analysis.checklist.sections:
+        scenario = section.heading if section.kind == "scenario" else "-"
+        for item in section.items:
+            names = [entry for entry in item.verified_by if OBLIGATION_ID.match(entry)]
+            rows.append(
+                {
+                    "id": item.id,
+                    "scenario": scenario,
+                    "obligations": list(item.verified_by),
+                    "status": item_status(item.verified_by, statuses),
+                    "tests": unique(name for ident in names for name in tests.get(ident, [])),
+                }
+            )
+    return rows
+
+
 def review_view(feature):
     """What a reviewer needs: each obligation's status, then everything not verified and why."""
     evidence = feature.evidence
@@ -2111,6 +2369,14 @@ def review_view(feature):
     not_verified.extend(
         {"requirement": exemption.requirement, "reason": "exempt: see plan"} for exemption in feature.plan.exemptions
     )
+    analysis = analyse_items(feature)
+    items = None
+    item_changes = None
+    if analysis is not None:
+        items = item_rows(feature, analysis, obligations)
+        open_items = [row for row in items if row["status"] not in ("verified", "exempt")]
+        not_verified.extend({"requirement": row["id"], "reason": row["status"]} for row in open_items)
+        item_changes = item_change_entries(feature, analysis)
 
     exceptions = []
     for item in evidence.exceptions:
@@ -2131,7 +2397,7 @@ def review_view(feature):
             text += f", alters behaviour ({approval})"
         changes.append(text)
 
-    return {
+    view = {
         "obligations": obligations,
         "not_verified": not_verified,
         "open_decisions": [
@@ -2147,6 +2413,10 @@ def review_view(feature):
             if record.phase == "baseline" and record.result == "fail"
         ],
     }
+    if items is not None:
+        view["items"] = items
+        view["item_changes"] = item_changes
+    return view
 
 
 def listed(items):
@@ -2166,19 +2436,33 @@ def view_lines(view):
         for row in view["obligations"]
     ]
     unverified = ", ".join(f"{item['requirement']} ({item['reason']})" for item in view["not_verified"])
-    return render_table(SUMMARY_HEADER, rows).splitlines() + [
+    lines = render_table(SUMMARY_HEADER, rows).splitlines()
+    if view.get("items") is not None:
+        item_table = [
+            {
+                "Behaviour item": row["id"],
+                "Scenario": row["scenario"],
+                "Obligations": join_cell(row["obligations"]),
+                "Status": row["status"],
+                "Tests": join_cell(row["tests"]),
+            }
+            for row in view["items"]
+        ]
+        lines += [""] + render_table(ITEM_HEADER, item_table).splitlines()
+    lines += [
         "",
         f"**Not verified**: {unverified or 'none'}.",
         "",
         f"**Open decisions**: {listed(view['open_decisions'])}. "
         f"**Exceptions**: {listed(view['exceptions'])}. "
         f"**Expectation changes**: {listed(view['expectation_changes'])}.",
-        "",
-        f"**Pre-existing failures**: {listed(view['pre_existing_failures'])}.",
     ]
+    if view.get("item_changes") is not None:
+        lines += ["", f"**Item changes**: {listed([entry['text'] for entry in view['item_changes']])}."]
+    return lines + ["", f"**Pre-existing failures**: {listed(view['pre_existing_failures'])}."]
 
 
-def scenarios_view(checklist):
+def scenarios_view(checklist, statuses=None):
     """The checklist as a reviewer reads it: each scenario's quote above its items, then Other behaviours."""
     blocks = []
     data = []
@@ -2187,9 +2471,10 @@ def scenarios_view(checklist):
         lines.extend("  > " + line for line in section.quote.splitlines())
         entries = []
         for item in section.items:
-            lines.append(
-                f"  {item.id} | Expresses: {', '.join(item.expresses)} | Verified by: {', '.join(item.verified_by)}"
-            )
+            head = f"  {item.id} | Expresses: {', '.join(item.expresses)} | Verified by: {', '.join(item.verified_by)}"
+            if statuses:
+                head += f" | Status: {statuses.get(item.id, 'planned')}"
+            lines.append(head)
             lines.extend(f"    {keyword} {words}" for keyword, words in item.clauses)
             entries.append(
                 {
@@ -2215,7 +2500,15 @@ def cmd_status(args, root, feature_dir):
         text = read_checklist(feature_dir)
         if text is None:
             raise UsageError(f"cannot read {CHECKLIST_REL}: the file does not exist or cannot be read")
-        lines, data = scenarios_view(parse_checklist(text))
+        checklist = parse_checklist(text)
+        statuses = {}
+        evidence = open_ledger(feature_dir)
+        if evidence.item_baseline:
+            plan = require_plan(feature_dir)
+            tasks = parse_tasks(read_text(os.path.join(feature_dir, TASKS_FILE)) or "")
+            view = review_view(Item(dir=feature_dir, plan=plan, tasks=tasks, evidence=evidence))
+            statuses = {row["id"]: row["status"] for row in view["items"] or []}
+        lines, data = scenarios_view(checklist, statuses)
         return EXIT_OK, [], lines, {"scenarios": data}
     plan = require_plan(feature_dir)
     evidence = open_ledger(feature_dir)
@@ -2329,6 +2622,25 @@ def rule_c7(feature):
     return findings
 
 
+def rule_c8(feature, spec):
+    """The behaviour checklist passes its rules, and no fixed item has changed without an accepted record."""
+    if not checklist_applies(feature.dir):
+        return []
+    findings = [
+        Finding("C8", found.subject, f"{found.rule}: {found.reason}")
+        for found in checklist_plan_findings(feature.dir, spec, feature.plan)
+    ]
+    if read_checklist(feature.dir) is not None:
+        findings.extend(
+            Finding("C8", found.subject, f"{found.rule}: {found.reason}")
+            for found in checklist_task_findings(feature.dir, feature.plan, feature.tasks)
+        )
+    analysis = analyse_items(feature)
+    if analysis is not None:
+        findings.extend(Finding("C8", problem.item, problem_reason(problem)) for problem in analysis.problems)
+    return findings
+
+
 def cmd_compliance(args, root, feature_dir):
     """Report a finished feature as COMPLIANT or NON-COMPLIANT, with the reasons."""
     spec = parse_spec(require_text(feature_dir, SPEC_FILE))
@@ -2344,6 +2656,7 @@ def cmd_compliance(args, root, feature_dir):
             findings.extend(rule_c5(feature))
             findings.extend(rule_c6(feature.evidence))
             findings.extend(rule_c7(feature))
+            findings.extend(rule_c8(feature, spec))
     verdict_text = "NON-COMPLIANT" if findings else "COMPLIANT"
     return (EXIT_FAIL if findings else EXIT_OK), findings, [verdict_text], {"verdict": verdict_text}
 
@@ -2619,8 +2932,9 @@ def build_parser():
     exception.add_argument("--approved-by")
 
     expectation = subs.add_parser("expectation", parents=[common], help="record an Expectation Change")
-    expectation.add_argument("--task", required=True)
-    expectation.add_argument("--tests", required=True, nargs="+", metavar="FILE")
+    expectation.add_argument("--task")
+    expectation.add_argument("--tests", nargs="+", metavar="FILE")
+    expectation.add_argument("--item", help="a behaviour item fixed at the baseline (instead of --task and --tests)")
     expectation.add_argument("--requirement", required=True, nargs="+", metavar="ID")
     expectation.add_argument("--justification", required=True)
     expectation.add_argument("--alters-behaviour", action="store_true")
@@ -2688,8 +3002,20 @@ def emit(args, code, findings=(), lines=(), extra=None, error=None):
     return code
 
 
+def check_expectation_form(parser, args):
+    """The test form needs --task and --tests; the item form takes --item and neither of them."""
+    if args.subcommand != "expectation":
+        return
+    if args.item and (args.task or args.tests):
+        parser.error("--item cannot be combined with --task or --tests")
+    if not args.item and not (args.task and args.tests):
+        parser.error("the following arguments are required: --task and --tests, or --item")
+
+
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    check_expectation_form(parser, args)
     root = os.getcwd()
     if args.subcommand == "hook":
         return cmd_hook(args, root)
