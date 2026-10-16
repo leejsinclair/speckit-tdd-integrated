@@ -166,6 +166,60 @@ class ComplianceBehaviourTests(ComplianceCase):
         self.assertIn("spec.md", result.err)
 
 
+class RuleC8Tests(ComplianceCase):
+    """C8: the checklist rules, and every item changed or removed without an accepted record."""
+
+    def test_a_finished_feature_with_a_sound_checklist_is_compliant(self):
+        self.assert_compliant("compliance-c8-pass")
+
+    def test_a_missing_checklist_is_reported(self):
+        self.assert_non_compliant(
+            "compliance-c8-missing-checklist",
+            "C8 tests/behaviour-checklist.md: CHECKLIST: the file does not exist or cannot be read",
+            only=False,
+        )
+
+    def test_a_failing_checklist_rule_is_reported_with_its_rule_id(self):
+        self.assert_non_compliant(
+            "compliance-c8-rule-fails", "C8 FR-003: B1: no behaviour item expresses it", only=False
+        )
+
+    def test_an_item_changed_without_a_record_is_reported(self):
+        self.assert_non_compliant(
+            "compliance-c8-unrecorded-change",
+            "C8 BI-002: changed since the baseline and no change is recorded",
+            only=False,
+        )
+
+    def test_a_reused_id_is_reported(self):
+        self.assert_non_compliant(
+            "compliance-c8-id-reused", "C8 BI-004: removed since the baseline and its id is reused", only=False
+        )
+
+    def test_a_stored_summary_that_shows_an_item_verified_without_the_records_is_out_of_date(self):
+        self.assert_non_compliant("compliance-c7-item-stale", OUT_OF_DATE, only=False)
+
+    def test_an_accepted_change_record_clears_the_finding(self):
+        for fixture in ("item-change-recorded", "item-change-approved", "item-removal-recorded"):
+            with self.subTest(fixture=fixture):
+                lines = self.compliance(fixture).out.splitlines()
+                self.assertFalse([line for line in lines if line.startswith("C8 ")], lines)
+
+    def test_a_change_awaiting_approval_is_reported(self):
+        lines = self.compliance("item-change-awaiting-approval").out.splitlines()
+        self.assertIn("C8 BI-002: change BX-01 alters behaviour and awaits approval", lines)
+
+    def test_a_feature_without_a_checklist_gets_no_c8_finding(self):
+        lines = self.compliance("compliance-c1-pass").out.splitlines()
+        self.assertEqual(lines, ["COMPLIANT"])
+
+    def test_compliance_writes_nothing_for_a_feature_with_items(self):
+        root = self.repo("compliance-c8-unrecorded-change")
+        before = snapshot(root)
+        self.check(["compliance"], root)
+        self.assertEqual(snapshot(root), before)
+
+
 class ExampleRunTests(unittest.TestCase):
     """The two artefact sets shipped for evaluation (FR-057, SC-011)."""
 
