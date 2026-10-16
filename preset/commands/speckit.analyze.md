@@ -57,6 +57,14 @@ the note at the top of this command says.
    and every test task traces to an item (B7). A missing checklist is reported as
    `CHECKLIST`. Together these are the findings B1 to B7.
 
+   The first check also covers the Manual verification table: each manual check is complete
+   and has a unique id (M1), and covers requirements the specification or the plan holds
+   (M2). When the feature has an evidence document, add its standing deferrals and manual
+   checks: a deferral that no approval covers where one is needed is G12, and compliance
+   rule C9 gives a notice for each deferred obligation and each open or failed manual
+   check. Notices are not findings: copy each into the report under "Verification
+   coverage" as a notice, and do not count it among the issues.
+
 4. **Report the findings.** Add each finding to the analysis report under a "Verification
    coverage" heading, exactly as the check printed it, with the rule identifier, and count
    it among the report's issues. When both checks exit 0, say so in one line.

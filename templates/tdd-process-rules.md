@@ -428,6 +428,39 @@ python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py decision 
 - Never proceed on an assumed answer.
 - When every remaining task depends on an open decision, stop and report.
 
+## When verification is not possible
+
+Some work cannot be verified by an automated test. Three cases are named, and each is
+stated in the evidence and the reports rather than passed over.
+
+**The project has no test tooling.** The plan stage records a single `None` row in the
+Verification commands table, says the project has no test tooling, and carries on. The
+process never chooses or installs a test framework, and writes no example tests for a
+project that has none: choosing one belongs to the developer. In this no-tooling mode no
+`run` is made, tasks are marked complete once their work is done, and every report says
+nothing is verified by tests. Declaring a command in the table later switches the checks
+on, with no other change.
+
+**An obligation's test cannot be run now.** A service is unreachable or an environment is
+broken. Classify the failed run as `environment`, then record a deferral of the obligation
+with the reason (`defer --vo <id> --reason "<why>"`). A deferral is explicit, reasoned and
+reported. It does not make the obligation verified, and it is lifted by a later passing
+run. Who may defer: the agent may record a deferral that follows an `environment`
+classification. A deferral on any other ground, or one the developer should judge, needs
+the developer's approval, recorded with `approve --id <DF-nn> --by "<name>"` only after the
+developer has given it in the conversation.
+
+**A behaviour cannot be automated.** The plan stage lists it as a manual check in the
+Manual verification table, with its steps, the expected result and why it is not
+automated. A person does the check and records the result with `manual --check <MV-nnn>
+--result <pass|fail> --by "<name>"`. The result is a person's own word: the agent never
+records one on their behalf and never invents a name.
+
+Nothing deferred or manual is reported as verified. Each is listed under "Not verified by
+tests" with its state, and the counts of verified obligations, deferred obligations and
+open, failed and passed manual checks are reported. An open or failed manual check is a
+notice, not a failure of the gate.
+
 ## Traceability and review evidence
 
 A reviewer who took no part in the work must be able to say, for any requirement, whether

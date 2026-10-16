@@ -33,6 +33,10 @@ strategy: wrap
 >   If it exits non-zero, stop: do not generate tasks while the plan check fails, because
 >   tasks written over a failing plan inherit its gaps. Report the findings, name
 >   `__SPECKIT_COMMAND_PLAN__` as the stage that corrects them, and generate nothing.
+> - **If the plan records no test tooling** (a single `None` row in Verification commands),
+>   the plan check passes and the task list is generated as usual. State plainly now and in
+>   the Completion Report that the project has no test tooling and that nothing is verified
+>   by tests.
 > - **Otherwise**, with the plan check passing, test tasks are not optional. This overrides the statement below that
 >   "Tests are OPTIONAL" and every instruction to generate test tasks only on request:
 >   every obligation in the Verification Plan gets a test task, placed before the task
@@ -81,4 +85,5 @@ or when `plan.md` has no Verification Plan, as the note at the top of this comma
    exits non-zero.
 
 In the Completion Report, state the number of test, behaviour and no-test tasks and the
-result of the check.
+result of the check. When the plan records no test tooling, also say that the project has no
+test tooling and that nothing is verified by tests.

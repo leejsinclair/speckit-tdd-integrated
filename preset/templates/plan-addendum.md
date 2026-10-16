@@ -15,7 +15,9 @@
   ID: short, lowercase letters, digits and hyphens. Command: in backticks, with at most
   one {select} where a test selector goes. Scope: focused (run per increment) or broad
   (run at checkpoints). Source: where the project defines the command.
-  If the project has no runnable test command, leave the table empty and raise the gap.
+  A project with no way to run tests writes a single `None` row: the ID is None and the
+  other cells are -. The checks then run in no-tooling mode, and nothing is reported as
+  verified by tests. Never invent a command or choose a test framework.
 -->
 
 | ID | Command | Scope | Source |
@@ -50,6 +52,21 @@
 | Requirement | Reason | Alternative verification |
 |-------------|--------|--------------------------|
 | None | - | - |
+
+### Manual verification
+
+<!--
+  This heading is read by the checks and must be kept. One row per check that a person
+  does by hand because it cannot be automated: a visual layout, a judgement of wording,
+  a step in an external system. ID: MV- and three digits. Covers: the FR-, SC-, USn-ASm,
+  DC- or EC- ids, or the VO- ids, that the check is about. A single None row when there
+  are no manual checks. A person records the result with the manual subcommand; the plan
+  holds no result.
+-->
+
+| ID | Covers | Steps | Expected result | Why not automated |
+|----|--------|-------|-----------------|-------------------|
+| None | - | - | - | - |
 
 ### Behaviour checklist
 
