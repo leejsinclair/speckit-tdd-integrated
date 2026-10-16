@@ -8,7 +8,7 @@ import time
 import unittest
 
 from fixtures.make_features import check_value, fingerprint
-from support import EVIDENCE_REL, RunCase, evidence_text, records, snapshot, table_rows, write
+from support import EVIDENCE_REL, RepoCase, RunCase, evidence_text, records, snapshot, table_rows, write
 
 BROKEN = "| broken | `sh tests/fixtures/bin/fake_test.sh assert` | broad | tests/fixtures/bin |"
 OTHER_TOOL = (
@@ -898,6 +898,53 @@ class BaselineRefusedWhileChecklistFailsTests(RunCase):
         self.assertEqual(result.code, 0, result)
         self.assertEqual(len(table_rows(open(top).read(), "## Test execution records")), before + 1)
         self.assertFalse(os.path.exists(os.path.join(root, "specs", "001-demo", "tests")))
+
+
+class RedRefusedForAnUnlinkedObligationTests(RepoCase):
+    """A Red run for an obligation no behaviour item names is refused (contracts section 4)."""
+
+    def setUp(self):
+        self.root = self.repo("red-unlinked-obligation")
+        write(self.root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
+
+    def red(self, task, vo):
+        return self.check(
+            ["run", "--phase", "red", "--command", "unit", "--select", "assert", "--task", task, "--vo", vo,
+             "--tests", "tests/test_cart.py", "--expect", "AssertionError: expected 0"],
+            self.root,
+        )  # fmt: skip
+
+    def test_an_obligation_named_by_no_item_is_refused_and_nothing_is_recorded(self):
+        before = snapshot(self.root)
+        result = self.red("T016", "VO-003")
+        self.assertEqual(result.code, 2, result)
+        self.assertEqual(result.out, "")
+        self.assertIn("VO-003", result.err)
+        self.assertIn("no behaviour item names it", result.err)
+        self.assertIn("add it to an existing or new item first", result.err)
+        self.assertEqual(snapshot(self.root), before)
+
+    def test_an_obligation_named_by_an_item_is_recorded_as_before(self):
+        result = self.red("T011", "VO-001")
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("recorded #2: red unit: fail, valid", result.out)
+
+    def test_other_phases_are_not_refused_on_this_ground(self):
+        result = self.check(
+            ["run", "--phase", "green", "--command", "unit", "--select", "pass", "--task", "T017", "--vo", "VO-003"],
+            self.root,
+        )
+        self.assertNotIn("no behaviour item names it", result.err)
+
+    def test_an_older_feature_is_not_asked_for_items(self):
+        root = self.repo("valid-minimal")
+        write(root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
+        result = self.check(
+            ["run", "--phase", "red", "--command", "unit", "--select", "assert", "--task", "T013", "--vo", "VO-002",
+             "--tests", "tests/test_cart.py", "--expect", "AssertionError: expected 0"],
+            root,
+        )  # fmt: skip
+        self.assertNotIn("no behaviour item", result.err)
 
 
 if __name__ == "__main__":

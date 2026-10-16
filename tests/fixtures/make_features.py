@@ -1627,7 +1627,11 @@ def _red_unlinked_obligation():
         "| VO-003 | EC-02 | A very large cart is totalled | The total is returned | unit | discovered |\n"
         "\n### Verification exemptions",
     )
-    return item_case(records=[baseline()], rows=item_rows(), plan=plan)
+    tasks = TASKS + (
+        "- [ ] T016 [US1] [VO-003] Write the failing test for a very large cart in tests/test_cart.py\n"
+        "- [ ] T017 [US1] [VO-003] Make the very large cart total pass in src/cart.py\n"
+    )
+    return item_case(records=[baseline()], rows=item_rows(), plan=plan, tasks=tasks)
 
 
 # Status cases: the checklist also holds BI-005, which names both obligations.
