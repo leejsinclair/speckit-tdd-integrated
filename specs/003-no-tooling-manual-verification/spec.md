@@ -114,14 +114,14 @@ A developer reading the documentation can tell when test-first development and t
 - **FR-002**: The process MUST NOT choose, install or configure a test framework, and MUST NOT write a test command that the project does not define.
 - **FR-003**: While the plan records no test tooling, the tasks stage MUST generate tasks, with each test task still naming the obligation it would serve.
 - **FR-004**: While the plan records no test tooling, implementation MUST NOT require a baseline test run, a failing-first run or a passing run, and tasks MUST be accepted as complete.
-- **FR-005**: While the plan records no test tooling, the obligation checks and the behaviour checklist rules MUST apply unchanged.
-- **FR-006**: Every stage report, and status, MUST state that the project has no test tooling and that nothing was verified by tests.
+- **FR-005**: While the plan records no test tooling, the plan, trace and behaviour checklist rules MUST apply unchanged; only the evidence gates that need a test run do not apply.
+- **FR-006**: The plan, tasks, implement and analyze reports, and status, MUST state that the project has no test tooling and that nothing was verified by tests.
 - **FR-007**: When a test command is declared, the process MUST apply the baseline, gates and compliance rules from that point, and the plan check MUST report a plan that records no test tooling and also declares a command.
 
 #### Deferred obligations
 
 - **FR-008**: An obligation MUST be capable of being recorded as deferred, with a reason that is not empty, as a tamper-evident record in the evidence.
-- **FR-008A**: An agent MUST be able to defer an obligation without approval only when the reason is an environment failure already recorded for that obligation, or the plan's record of no test tooling. A deferral for any other reason MUST NOT be accepted until a named person has approved it, and the approval MUST be recorded with the deferral.
+- **FR-008A**: An agent MUST be able to defer an obligation without approval only when the reason is an environment failure already recorded for that obligation, or the plan's record of no test tooling, which makes every obligation deferred without a separate record. A deferral for any other reason MUST NOT be accepted until a named person has approved it, and the approval MUST be recorded with the deferral.
 - **FR-009**: A deferred obligation MUST NOT hold the completion of the tasks that serve it, except while a deferral that FR-008A requires to be approved has not been.
 - **FR-010**: A deferred obligation MUST NOT be reported as verified in any report, and MUST be reported with its reason.
 - **FR-011**: A later passing run of a deferred obligation's test MUST make the obligation verified and remove it from the deferred list.
@@ -163,7 +163,7 @@ A developer reading the documentation can tell when test-first development and t
 - **SC-002**: In no scenario is a deferred obligation, or an obligation reported while no test tooling is recorded, shown as verified.
 - **SC-003**: A feature with deferred obligations and open manual checks completes every task, and compliance exits with no failure caused by them.
 - **SC-004**: Declaring a test command in a feature that recorded no test tooling brings the baseline and gates into effect, in 100% of seeded cases.
-- **SC-005**: A reader of the documentation can answer the three questions of User Story 4 correctly without help.
+- **SC-005**: A reader who has not seen this feature answers the three questions of User Story 4 correctly from the documentation alone; one reader answering all three correctly meets it.
 - **SC-006**: The existing test suite passes unchanged except where a test asserted the behaviour this feature replaces.
 
 ## Assumptions

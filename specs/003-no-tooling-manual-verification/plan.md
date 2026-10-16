@@ -158,7 +158,7 @@ specs/003-no-tooling-manual-verification/
 scripts/python/tdd_check.py          # parsing, rules M1 M2 G12 C9, defer, manual, status
 templates/
 ├── tdd-process-rules.md             # new section "When verification is not possible"
-└── tdd-evidence-template.md         # the two new tables, written on first use
+└── tdd-evidence-template.md         # unchanged; the script writes the two new tables on first use
 preset/
 ├── commands/                        # plan, tasks, implement, analyze wrappers
 └── templates/plan-addendum.md       # the "### Manual verification" sub-heading

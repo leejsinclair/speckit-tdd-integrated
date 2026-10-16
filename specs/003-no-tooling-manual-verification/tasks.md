@@ -57,6 +57,8 @@ tested on its own.
   needs
 - No existing fixture is changed, and no existing assertion is changed. If one fails, the
   change has broken 0.2.0 behaviour (SC-006): stop and return the design to the developer
+- A fixture named by more than one task is defined once, by the first task that names it, and
+  reused by the others
 - A task that the parallel lists below place after a test task starts only once that test
   task's failing commit exists, even when the two touch different files
 - The code must run on Python 3.9: no `match`, no `X | Y` type unions at runtime, no
@@ -97,14 +99,14 @@ work can begin
 **Goal**: A plan that records no test tooling passes every stage, nothing is refused, and
 every report says nothing was verified by tests
 
-**Independent Test**: In `examples/runs/no-tooling/` (created in T029) run `plan`, `tasks`,
+**Independent Test**: On the fixture `no-tooling-complete` (T009; the shipped example of T029 repeats it later) run `plan`, `tasks`,
 `gate --all`, `status` and `compliance`: all exit 0, the no-tooling state is stated, and
 adding a command switches the baseline and gates on (quickstart scenario 2)
 
 - [ ] T007 [P] [US1] Write tests in `tests/test_trace.py` with fixtures `no-tooling-valid`, `no-tooling-with-command`, `no-tooling-bad-checklist` and `no-tooling-empty-table`: `plan` on the first prints `plan: passed (no test tooling recorded)` with exit 0; on the second gives one `PLAN` finding on the commands table (EC-02, FR-007); an empty commands table with no `None` row still gives the 0.2.0 finding; on the third the checklist rules still apply (FR-005); `tasks` on the first passes
 - [ ] T008 [US1] Implement in `scripts/python/tdd_check.py`: `check_plan` accepts the `None` row and reports it beside a command, and `cmd_plan` prints the added words. Makes T007 pass with the whole suite
 - [ ] T009 [P] [US1] Write tests in `tests/test_gate.py`, `tests/test_hook.py` and `tests/test_run.py` with fixtures `no-tooling-complete` (all tasks marked complete, no evidence document), `no-tooling-open-decision` and `no-tooling-checklist-changed`: `gate --all` exits 0 on the first; the hook allows marking a task complete; an open decision (G2) and a failing checklist (G11) still hold a task, because the baseline test of G11 is replaced by the no-tooling state (research D2); `run` is refused with the added words `the plan records no test tooling`; the same feature with a command declared and the `None` row removed has G3 and G4 findings for the same tasks (SC-004)
-- [ ] T010 [US1] Implement in `scripts/python/tdd_check.py`: G3, G4, G5 and G6 return nothing for an obligation while `plan.no_tooling`, G11 also applies in that mode, and the refusal message of `run`. Makes T009 pass with the whole suite
+- [ ] T010 [US1] Implement in `scripts/python/tdd_check.py`: G3, G4 and G6 return nothing for an obligation while `plan.no_tooling` (G5 is unchanged: it needs a Red and a Green record, and none exist in this mode), G11 also applies in that mode, and the refusal message of `run`. Makes T009 pass with the whole suite
 - [ ] T011 [P] [US1] Write tests in `tests/test_status.py` and `tests/test_compliance.py` with fixtures `no-tooling-complete`, `no-tooling-with-runs` and `no-tooling-all-deferred`: `status` states `No test tooling: nothing is verified by tests` and shows every obligation as `deferred` with the reason `no test tooling` and the counts line (FR-006, FR-012, FR-021); `compliance` is `COMPLIANT` with `notice:` lines and exit 0 (EC-06, SC-003); a baseline or run beside the `None` row gives a `C9` finding (EC-04); the stored Summary regenerates identically, so C7 holds
 - [ ] T012 [US1] Implement in `scripts/python/tdd_check.py`: the no-tooling part of `obligation_status` returning `deferred`, the `Not verified` list and counts in `review_view`, the notices in `cmd_compliance`, and rule C9. Makes T011 pass with the whole suite
 
@@ -119,7 +121,7 @@ documentation still describe the old behaviour: User Story 4 changes them
 deferral never holds a task; a deferral not on an environment failure waits for approval;
 nothing deferred is shown as verified
 
-**Independent Test**: In `examples/runs/deferred/` (created in T030) the quickstart scenario 3
+**Independent Test**: On the fixtures of T013 and T015 (the shipped example of T030 repeats them later) the quickstart scenario 3
 sequence gives the results listed there
 
 **Depends on**: Phase 2 (parsing). Reads `obligation_status` as changed by T012
@@ -138,7 +140,7 @@ sequence gives the results listed there
 **Goal**: A Manual verification table checked by M1 and M2, a `manual` subcommand that
 records a person's result, behaviour items that can name a manual check
 
-**Independent Test**: Quickstart scenario 4 on `examples/runs/deferred/`
+**Independent Test**: Quickstart scenario 4 on the fixtures `manual-open`, `manual-pass` and `manual-fail` (T019)
 
 **Depends on**: Phase 2 (parsing); T016 for the shared `status` notices
 
@@ -161,11 +163,11 @@ and the process rules; the examples pass; story 09 completes every stage
 
 **Depends on**: Phases 3 to 5 (the wrappers describe behaviour that must exist)
 
-- [ ] T021 [P] [US4] Write structural tests in `tests/test_manifests.py`: `preset/templates/plan-addendum.md` holds a `### Manual verification` sub-heading with the contract's header row and a `None` row after the exemptions table; `templates/tdd-evidence-template.md` is unchanged for a feature without the new tables; the process rules hold a section "When verification is not possible" covering no test tooling, deferral, who may defer, manual checks and that nothing deferred is reported as verified; the plan wrapper tells the agent to write the `None` row when there is no way to run tests, to say so, and to carry on, and no longer tells it to leave the table empty or to stop; the tasks wrapper says a plan recording no test tooling passes; the implement wrapper names `defer`, `manual`, no-tooling mode and the FR-021 counts; the analyze wrapper names M1, M2, G12, C9 and notices; no wrapper or addendum names a test framework (`TOOL_NAMES`)
+- [ ] T021 [P] [US4] Write structural tests in `tests/test_manifests.py`: `preset/templates/plan-addendum.md` holds a `### Manual verification` sub-heading with the contract's header row and a `None` row after the exemptions table; `templates/tdd-evidence-template.md` is unchanged for a feature without the new tables; the process rules hold a section "When verification is not possible" covering no test tooling, deferral, who may defer, manual checks and that nothing deferred is reported as verified; the plan wrapper tells the agent to write the `None` row when there is no way to run tests, to say so, and to carry on, and no longer tells it to leave the table empty or to stop; the tasks wrapper says a plan recording no test tooling passes, and that the report states the project has no test tooling and nothing is verified by tests (FR-006); the implement wrapper names `defer`, `manual`, no-tooling mode and the FR-021 counts; the analyze wrapper names M1, M2, G12, C9 and notices; no wrapper or addendum names a test framework (`TOOL_NAMES`)
 - [ ] T022 [US4] Add the `### Manual verification` sub-heading and empty table to `preset/templates/plan-addendum.md`, with a comment that the heading is read by the checks, and change the comment on the commands table to say that a project with no way to run tests writes a single `None` row
 - [ ] T023 [US4] Write the "When verification is not possible" section of `templates/tdd-process-rules.md`, after "Exceptions", from research D11: the three cases; the agent never chooses or installs a framework; who may defer and when approval is needed; deferral is explicit, reasoned and reported; nothing deferred or manual is reported as verified; a person's manual result is theirs
 - [ ] T024 [US4] Edit `preset/commands/speckit.plan.md`: step 1 (commands) per research D11, the new step for the Manual verification table after the exemptions step, the check step, and the Completion Report counts. Keep step numbers consistent
-- [ ] T025 [P] [US4] Edit `preset/commands/speckit.tasks.md` and `preset/commands/speckit.analyze.md` per research D11
+- [ ] T025 [P] [US4] Edit `preset/commands/speckit.tasks.md` and `preset/commands/speckit.analyze.md` per research D11; the tasks report states the no-tooling state when the plan records it (FR-006)
 - [ ] T026 [US4] Edit `preset/commands/speckit.implement.md` per research D11: no-tooling mode, unreachable service flow (`classify` then `defer`), manual checks, and the counts in the final report
 - [ ] T027 [US4] Write the README section "When TDD and BDD cannot apply", update its Known limits (items stay editable with no baseline; a person's word on manual checks; the reason for a deferral is judgement; all-deferred completes, by design) and the "Compared with spec-kit-bdd" line if it needs it; add the 0.3.0 entry to `CHANGELOG.md` (what changed, the two behaviour changes of plan.md Principle VI, upgrade note: none needed); add the three new cases to `docs/evaluation.md`
 - [ ] T028 [P] [US4] Write tests in `tests/test_compliance.py` for the two new examples: `examples/runs/no-tooling/` and `examples/runs/deferred/` each pass `compliance` with exit 0 and the notices the quickstart lists; the README of `examples/runs/` names both
