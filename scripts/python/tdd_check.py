@@ -2052,12 +2052,19 @@ def gate_g2(task, feature):
     ]
 
 
-def deferred_standing(feature, obligation):
-    """The obligation is deferred and the deferral stands, so no rule demands a run for it.
+def deferral_of(feature, obligation):
+    """Why the obligation is deferred, as ``Item(reason, deferral)``, or None when it is not.
 
-    While the plan records no test tooling, every obligation is.
+    While the plan records no test tooling, every obligation is deferred, with no record of its own.
     """
-    return feature.plan.no_tooling
+    if feature.plan.no_tooling:
+        return Item(reason="no test tooling", deferral=None)
+    return None
+
+
+def deferred_standing(feature, obligation):
+    """The obligation is deferred and the deferral stands, so no rule demands a run for it."""
+    return deferral_of(feature, obligation) is not None
 
 
 def gate_g3(task, feature):
@@ -2305,6 +2312,7 @@ def cmd_gate(args, root, feature_dir):
 # for the status subcommand and for the Summary the ledger writes.
 # ---------------------------------------------------------------------------
 
+NO_TOOLING_LINE = "No test tooling: nothing is verified by tests"
 SUMMARY_HEADER = ["Obligation", "Requirements", "Status", "Tests", "Latest result"]
 ITEM_HEADER = ["Behaviour item", "Scenario", "Obligations", "Status", "Tests"]
 
@@ -2320,14 +2328,15 @@ def exception_complete(exception):
 
 
 def obligation_status(obligation, feature):
-    """The derived status of an obligation: planned, in progress, verified, blocked or failed."""
+    """The derived status of an obligation: planned, in progress, verified, deferred, blocked or failed."""
     evidence = feature.evidence
     # A record classified unreliable counts in neither direction.
     mine = [record for record in records_of(feature, obligation) if record.classification != "unreliable"]
     naming = [exception for exception in evidence.exceptions if obligation in exception.obligations]
     red = latest_red(feature, obligation)
 
-    if mine:
+    deferred = deferral_of(feature, obligation) is not None
+    if mine and not deferred:
         latest = mine[-1]
         failing_first = latest.phase == "red" and counts(latest)
         if latest.result == "fail" and not failing_first:
@@ -2347,6 +2356,8 @@ def obligation_status(obligation, feature):
         verified = any(record.time >= min(item.time for item in replacing) for record in greens)
     if verified:
         return "verified"
+    if deferred:
+        return "deferred"
 
     if red is None and any(item.kind == NO_ALTERNATIVE_KIND for item in naming):
         return "blocked"
@@ -2478,6 +2489,34 @@ def item_rows(feature, analysis, obligations):
     return rows
 
 
+def not_verified_by_tests(feature, obligations):
+    """The view keys for what tests do not verify: the no-tooling state, deferred obligations and their counts.
+
+    Empty when none applies, so a feature with a declared command and no deferral is viewed as under 0.2.0.
+    """
+    deferred = []
+    for row in obligations:
+        if row["status"] != "deferred":
+            continue
+        why = deferral_of(feature, row["id"])
+        entry = {"id": row["id"], "state": "deferred", "reason": why.reason}
+        if why.deferral:
+            entry["deferral"] = why.deferral
+        deferred.append(entry)
+    if not (deferred or feature.plan.no_tooling):
+        return {}
+    extra = {
+        "not_verified_by_tests": deferred,
+        "counts": {
+            "verified": sum(1 for row in obligations if row["status"] == "verified"),
+            "deferred": len(deferred),
+        },
+    }
+    if feature.plan.no_tooling:
+        extra["no_tooling"] = True
+    return extra
+
+
 def review_view(feature):
     """What a reviewer needs: each obligation's status, then everything not verified and why."""
     evidence = feature.evidence
@@ -2551,6 +2590,7 @@ def review_view(feature):
     if items is not None:
         view["items"] = items
         view["item_changes"] = item_changes
+    view.update(not_verified_by_tests(feature, obligations))
     return view
 
 
@@ -2584,6 +2624,16 @@ def view_lines(view):
             for row in view["items"]
         ]
         lines += [""] + render_table(ITEM_HEADER, item_table).splitlines()
+    if view.get("no_tooling"):
+        lines += ["", NO_TOOLING_LINE]
+    if view.get("not_verified_by_tests"):
+        lines += ["", "Not verified by tests", ""]
+        for entry in view["not_verified_by_tests"]:
+            suffix = f" ({entry['deferral']})" if entry.get("deferral") else ""
+            lines.append(f"- {entry['id']} {entry['state']}: {entry['reason']}{suffix}")
+    if "counts" in view:
+        counts_text = ", ".join(f"{name} {number}" for name, number in view["counts"].items())
+        lines += ["", f"Counts: {counts_text}"]
     lines += [
         "",
         f"**Not verified**: {unverified or 'none'}.",
@@ -2776,6 +2826,36 @@ def rule_c8(feature, spec):
     return findings
 
 
+def rule_c9(feature):
+    """A plan that records no test tooling does not also declare a command or hold a baseline or runs."""
+    if not feature.plan.no_tooling:
+        return []
+    findings = []
+    if feature.plan.commands:
+        findings.append(Finding("C9", PLAN_FILE, "the plan records no test tooling and also declares a command"))
+    if feature.evidence.records:
+        findings.append(
+            Finding(
+                "C9",
+                feature.evidence.name,
+                "the plan records no test tooling but the evidence holds a baseline or runs",
+            )
+        )
+    return findings
+
+
+def compliance_notices(feature):
+    """What tests do not verify, as notice texts. They are never findings."""
+    view = review_view(feature)
+    notices = (
+        [NO_TOOLING_LINE.replace("No test tooling:", "no test tooling is recorded:")] if view.get("no_tooling") else []
+    )
+    for entry in view.get("not_verified_by_tests", []):
+        suffix = f" ({entry['deferral']})" if entry.get("deferral") else ""
+        notices.append(f"{entry['id']} {entry['state']}: {entry['reason']}{suffix}")
+    return notices
+
+
 def cmd_compliance(args, root, feature_dir):
     """Report a finished feature as COMPLIANT or NON-COMPLIANT, with the reasons."""
     spec = parse_spec(require_text(feature_dir, SPEC_FILE))
@@ -2789,11 +2869,20 @@ def cmd_compliance(args, root, feature_dir):
         if not feature.evidence.findings:
             findings.extend(rule_c4(feature.evidence))
             findings.extend(rule_c5(feature))
-            findings.extend(rule_c6(feature.evidence))
+            if not feature.plan.no_tooling:
+                findings.extend(rule_c6(feature.evidence))
             findings.extend(rule_c7(feature))
             findings.extend(rule_c8(feature, spec))
+            findings.extend(rule_c9(feature))
     verdict_text = "NON-COMPLIANT" if findings else "COMPLIANT"
-    return (EXIT_FAIL if findings else EXIT_OK), findings, [verdict_text], {"verdict": verdict_text}
+    extra = {"verdict": verdict_text}
+    lines = [verdict_text]
+    if feature.plan.has_section and not feature.evidence.findings:
+        notices = compliance_notices(feature)
+        if notices:
+            extra["notices"] = notices
+            lines += [f"notice: {text}" for text in notices]
+    return (EXIT_FAIL if findings else EXIT_OK), findings, lines, extra
 
 
 # ---------------------------------------------------------------------------
