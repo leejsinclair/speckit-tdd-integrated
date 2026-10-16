@@ -25,6 +25,9 @@ provides:
     - name: "tdd-evidence-template"
       file: "templates/tdd-evidence-template.md"
       description: "Starting content of a feature's tdd-evidence.md"
+    - name: "behaviour-checklist-template"
+      file: "templates/behaviour-checklist-template.md"
+      description: "Starting content of a feature's tests/behaviour-checklist.md"
   scripts:
     - name: "tdd-check"
       file: "scripts/python/tdd_check.py"

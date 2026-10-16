@@ -50,3 +50,13 @@
 | Requirement | Reason | Alternative verification |
 |-------------|--------|--------------------------|
 | None | - | - |
+
+### Behaviour checklist
+
+<!--
+  This heading is read by the checks and must be kept: it switches the behaviour checklist
+  rules on for this feature. The plan stage writes the checklist itself to
+  tests/behaviour-checklist.md; keep the line below as it is.
+-->
+
+Behaviour items are in [tests/behaviour-checklist.md](tests/behaviour-checklist.md).
