@@ -8,7 +8,7 @@ import time
 import unittest
 
 from fixtures.make_features import check_value, fingerprint
-from support import EVIDENCE_REL, RepoCase, RunCase, evidence_text, records, snapshot, table_rows, write
+from support import EVIDENCE_REL, RepoCase, RunCase, evidence_text, read, records, snapshot, table_rows, write
 
 BROKEN = "| broken | `sh tests/fixtures/bin/fake_test.sh assert` | broad | tests/fixtures/bin |"
 OTHER_TOOL = (
@@ -892,11 +892,11 @@ class BaselineRefusedWhileChecklistFailsTests(RunCase):
 
     def test_an_older_feature_records_its_baseline_where_its_evidence_already_is(self):
         root = self.repo("valid-minimal")
-        top = os.path.join(root, "specs", "001-demo", "tdd-evidence.md")
-        before = len(table_rows(open(top).read(), "## Test execution records"))
+        top = ["specs", "001-demo", "tdd-evidence.md"]
+        before = len(table_rows(read(root, *top), "## Test execution records"))
         result = self.check(["run", "--phase", "baseline", "--command", "suite"], root)
         self.assertEqual(result.code, 0, result)
-        self.assertEqual(len(table_rows(open(top).read(), "## Test execution records")), before + 1)
+        self.assertEqual(len(table_rows(read(root, *top), "## Test execution records")), before + 1)
         self.assertFalse(os.path.exists(os.path.join(root, "specs", "001-demo", "tests")))
 
 
