@@ -29,7 +29,7 @@ behaviour this feature replaces (SC-006); Ruff and markdownlint report nothing.
 
 ## 2. No test tooling (User Story 1)
 
-In a copy of `examples/no-tooling/` (created by this feature):
+In a copy of `examples/runs/no-tooling/` (created by this feature):
 
 ```bash
 CHECK plan          # plan: passed (no test tooling recorded)
@@ -45,7 +45,7 @@ unit` is now demanded before any other run, and `gate --all` applies G3 and G4 a
 
 ## 3. A deferred obligation (User Story 2)
 
-In a copy of `examples/deferred/`:
+In a copy of `examples/runs/deferred/`:
 
 ```bash
 CHECK run --phase red --task T003 --vo VO-002 --command integration --tests tests/q.py --expect "refused"
@@ -77,12 +77,12 @@ Break the table (an empty Steps cell, a duplicate id, a `Covers` id that does no
 
 ## 5. Older features (FR-022)
 
-Run `plan`, `gate --all`, `status` and `compliance` on `examples/compliant/` from 0.2.0. The
+Run `plan`, `gate --all`, `status` and `compliance` on `examples/runs/compliant/` from 0.2.0. The
 output and exit codes are unchanged.
 
 ## 6. Agent-driven story (User Story 4)
 
-Follow `stories/09-new-project-no-framework.md` in an empty project with Claude Code
+Follow `examples/stories/09-new-project-no-framework.md` in an empty project with Claude Code
 (Haiku, then Sonnet). Expected: all five stages complete, no framework is chosen or
 installed, and the final report says nothing was verified by tests.
 

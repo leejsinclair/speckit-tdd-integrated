@@ -162,8 +162,8 @@ templates/
 preset/
 ├── commands/                        # plan, tasks, implement, analyze wrappers
 └── templates/plan-addendum.md       # the "### Manual verification" sub-heading
-examples/                            # no-tooling and deferred examples (new)
-stories/                             # story 09, new project with no framework (new)
+examples/runs/                       # no-tooling and deferred examples (new)
+examples/stories/                    # story 09, new project with no framework (new)
 tests/
 ├── fixtures/features/               # generated feature directories (new cases)
 └── test_*.py                        # new and extended unit tests
