@@ -195,6 +195,42 @@ items approved in the conversation:
    approved for 001 and 002).
 5. The three limits recorded under Principle III above.
 
+## As built (T039)
+
+The Constitution Check and Complexity Tracking above were re-read against what was built on
+2026-10-17. No new departure was found, so nothing waits for the maintainer. The differences
+and limits as built:
+
+- **Principle I.** Two subcommands (`defer`, `manual`) and two evidence tables (`## Deferrals`,
+  `## Manual results`) were added, the approved departures. No Spec Kit command, document or
+  workflow was added.
+- **Principle III, limits.** The three recorded limits stand as built. Two more are in the
+  README's Known limits: items stay editable with no baseline, and a feature whose
+  obligations are all deferred completes, with notices. Neither is a new departure.
+- **Principle IV.** Every script change has a failing-test commit before its implementation
+  commit (replayed in T040). The wrapper, rule and template text was tested by wording tests,
+  as approved. The extended performance test passed on its first run, the approved exception;
+  each limit was shown reachable (quickstart, T032). The example tests (T028) failed first and
+  the examples were then made by the check script.
+- **Principle VI.** The two documented behaviour changes are in the CHANGELOG under 0.3.0. The
+  0.2.0 outputs on every fixture that existed then are unchanged (compatibility tests).
+- **Layout of the status view.** The "Not verified by tests" section is a bullet list with a
+  `Counts:` line, not the table drawn in the design; the content is the same.
+- **Command syntax.** `approve` takes `--id` (`approve --id DF-02 --by NAME`), and the
+  quickstart's shorthand was corrected to match.
+- **A verified record after a deferral.** A passing run for a deferred obligation leaves it
+  `deferred` unless a valid failing-first record precedes it; the obligation reads `verified`
+  only then. This follows from rule G3 and G4 and is a limit, not a departure.
+- **Performance as built.** At ten times the stated scale `gate --all` and `compliance` take
+  about 35 s against the 2 s limit, with or without deferrals and manual checks. The README
+  records it as a known limit.
+- **Observed in an agent run (T037).** One model's task list named the standard library
+  `unittest` as a placeholder. Nothing was installed or configured. The wrapper says the
+  process never chooses a framework, and it was not changed; a maintainer may wish to tighten
+  the tasks wrapper.
+- **Format check.** `ruff format --check` flags two older test files; this feature's code is
+  clean.
+
 <!-- markdownlint-disable-file MD041 -->
 
 ## Architecture
