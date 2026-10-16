@@ -2121,9 +2121,17 @@ def deferral_of(feature, obligation):
     """Why the obligation is deferred, as ``Item(reason, deferral)``, or None when it is not.
 
     While the plan records no test tooling, every obligation is deferred, with no record of its own.
+    Otherwise a Deferral stands when it rests on an environment failure or a person has approved it.
     """
     if feature.plan.no_tooling:
         return Item(reason="no test tooling", deferral=None)
+    standing = [
+        item
+        for item in feature.evidence.deferrals
+        if obligation in item.obligations and (not item.needs_approval or item.approved_by)
+    ]
+    if standing:
+        return Item(reason=standing[-1].reason, deferral=standing[-1].id)
     return None
 
 
@@ -2320,7 +2328,23 @@ def gate_g11(task, feature):
     ]
 
 
-GATE_RULES = [gate_g1, gate_g2, gate_g3, gate_g4, gate_g5, gate_g6, gate_g7, gate_g8, gate_g9, gate_g10, gate_g11]
+def gate_g12(task, feature):
+    """Each Deferral naming one of the task's obligations has a reason, and an approver where it needs one."""
+    findings = []
+    for deferral in feature.evidence.deferrals:
+        if not any(item in task.obligations for item in deferral.obligations):
+            continue
+        subject = f"{task.id} {deferral.id}"
+        if not deferral.reason:
+            findings.append(Finding("G12", subject, "has no reason"))
+        if deferral.needs_approval and not deferral.approved_by:
+            findings.append(Finding("G12", subject, "needs approval and has no approver"))
+    return findings
+
+
+GATE_RULES = [
+    gate_g1, gate_g2, gate_g3, gate_g4, gate_g5, gate_g6, gate_g7, gate_g8, gate_g9, gate_g10, gate_g11, gate_g12,
+]  # fmt: skip
 
 
 def gate_task(task, feature):
@@ -2790,6 +2814,10 @@ def rule_c4(evidence):
                 )
             )
         previous = record.check
+    for ident in deferral_chain_breaks(evidence):
+        findings.append(
+            Finding("C4", ident, "the check value does not match the row: the record was changed after it was written")
+        )
     return findings
 
 
@@ -3050,6 +3078,12 @@ def item_routes(findings):
             f"  python3 {SCRIPT_INSTALL_PATH} expectation --item <item id> --requirement <id> "
             '--justification "<why>" [--alters-behaviour]\n'
             f'  python3 {SCRIPT_INSTALL_PATH} approve --id <BX-nn> --by "<name>"\n'
+        )
+    if "G12" in rules:
+        text += (
+            "A G12 finding means a deferral that does not rest on a recorded environment failure has no approver. "
+            "A named person approves it:\n"
+            f'  python3 {SCRIPT_INSTALL_PATH} approve --id <DF-nn> --by "<name>"\n'
         )
     if "G11" in rules:
         text += (
