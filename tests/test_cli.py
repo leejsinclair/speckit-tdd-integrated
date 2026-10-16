@@ -130,6 +130,13 @@ class UsageTests(RepoCase):
         self.assertEqual(data["exit_code"], 2)
         self.assertIn("feature directory not found: specs/absent", data["error"])
 
+    def test_status_accepts_the_scenarios_option_and_no_other_subcommand_does(self):
+        result = self.check(["status", "--help"], self.root)
+        self.assertEqual(result.code, 0)
+        self.assertIn("--scenarios", result.out)
+        for name in ("plan", "tasks", "compliance"):
+            self.assertNotIn("--scenarios", self.check([name, "--help"], self.root).out, name)
+
 
 class SourceTests(unittest.TestCase):
     def test_script_imports_only_allowed_standard_library_modules(self):

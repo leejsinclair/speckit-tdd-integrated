@@ -309,5 +309,71 @@ class SummaryWriterTests(RunCase):
         self.assert_summary_is_the_view()
 
 
+SCENARIOS_VIEW = """US1-AS1
+  > **Given** an empty cart, **When** it is totalled, **Then** the total is zero.
+  BI-001 | Expresses: FR-001, US1-AS1 | Verified by: VO-001
+    Given an empty cart
+    When the shopper asks for the total
+    Then the total is zero
+
+US1-AS2
+  > **Given** a cart with two items, **When** it is totalled, **Then** the total is their sum.
+  BI-002 | Expresses: FR-002, US1-AS2, SC-001 | Verified by: VO-002
+    Given a cart with two items priced 3 and 4
+    When the shopper asks for the total
+    Then the total is 7
+
+Other behaviours
+  BI-003 | Expresses: FR-003 | Verified by: exemption FR-003
+    Given the cart page is shown
+    When the shopper looks at it
+    Then it follows the shop's visual layout
+"""
+
+
+class ScenariosViewTests(RepoCase):
+    """``status --scenarios`` puts the specification's wording beside the items (FR-017)."""
+
+    def test_each_scenario_section_prints_its_quote_above_its_items_then_the_other_behaviours(self):
+        root = self.repo("checklist-valid")
+        result = self.check(["status", "--scenarios"], root)
+        self.assertEqual((result.code, result.err), (0, ""))
+        self.assertEqual(result.out, SCENARIOS_VIEW)
+
+    def test_it_needs_no_evidence(self):
+        root = self.repo("checklist-valid")
+        os.remove(os.path.join(self.feature(root), "tdd-evidence.md"))
+        before = snapshot(root)
+        result = self.check(["status", "--scenarios"], root)
+        self.assertEqual((result.code, result.out), (0, SCENARIOS_VIEW))
+        self.assertEqual(snapshot(root), before)
+
+    def test_the_option_is_accepted_with_json_and_carries_the_sections(self):
+        root = self.repo("checklist-valid")
+        result = self.check(["status", "--scenarios", "--json"], root)
+        self.assertEqual(result.code, 0, result)
+        data = json.loads(result.out)
+        self.assertEqual([item["heading"] for item in data["scenarios"]], ["US1-AS1", "US1-AS2", "Other behaviours"])
+        self.assertEqual(data["scenarios"][0]["items"][0]["id"], "BI-001")
+
+    def test_the_view_without_the_option_is_unchanged(self):
+        root = self.repo("checklist-valid")
+        plain = self.check(["status"], root)
+        self.assertEqual(plain.code, 0)
+        self.assertNotIn("US1-AS1\n  >", plain.out)
+
+    def test_an_older_feature_prints_exactly_what_status_prints(self):
+        root = self.repo("valid-minimal")
+        plain = self.check(["status"], root)
+        scenarios = self.check(["status", "--scenarios"], root)
+        self.assertEqual((scenarios.code, scenarios.out, scenarios.err), (plain.code, plain.out, plain.err))
+
+    def test_a_missing_checklist_is_a_usage_error(self):
+        root = self.repo("checklist-missing")
+        result = self.check(["status", "--scenarios"], root)
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("cannot read tests/behaviour-checklist.md", result.err)
+
+
 if __name__ == "__main__":
     unittest.main()
