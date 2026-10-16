@@ -68,6 +68,12 @@ recorded in the plan's Verification Plan. It is not invented while the code is w
   written one at a time during implementation, each just before the behaviour it verifies
   (FR-014).
 
+**Edge case ids.** Obligations and behaviour items cite an edge case as `EC-nn`, and the
+checks accept an `EC-` id only if the specification holds it as a whole word. When the
+specification's edge cases carry no ids, label them `EC-01`, `EC-02` in order by adding the
+label to each edge case in the specification, change no other word, and name the labels in
+the Completion Report. Never cite an `EC-` id the specification does not hold.
+
 **Ambiguity.** When a requirement is ambiguous, or contradicts another, in a way that
 changes what a test should assert, put the question to the developer. Do not choose an
 interpretation. Plan nothing for that requirement until it is answered: leave it without

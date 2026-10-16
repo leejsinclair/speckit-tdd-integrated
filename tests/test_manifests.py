@@ -575,12 +575,12 @@ class EdgeCaseLabelTests(unittest.TestCase):
     def step(self):
         below = wrapper_parts("plan")[2]
         start = below.index("**Edge case labels**")
-        return flat(below[start : below.index("**Material ambiguity**")])
+        return flat(below[start : below.index("**Verification obligations**")])
 
-    def test_step_sits_between_the_obligation_steps_and_the_ambiguity_step(self):
+    def test_step_comes_after_the_commands_and_before_the_obligations_that_cite_the_labels(self):
         below = wrapper_parts("plan")[2]
-        self.assertLess(below.index("**Verification exemptions**"), below.index("**Edge case labels**"))
-        self.assertLess(below.index("**Edge case labels**"), below.index("**Material ambiguity**"))
+        self.assertLess(below.index("**Verification commands**"), below.index("**Edge case labels**"))
+        self.assertLess(below.index("**Edge case labels**"), below.index("**Verification obligations**"))
 
     def test_it_labels_unnumbered_edge_cases_in_the_specification_without_changing_wording(self):
         step = self.step()

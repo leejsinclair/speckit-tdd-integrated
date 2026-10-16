@@ -41,7 +41,14 @@ replace the example rows. Follow the "Verification intent" rules in the process 
    empty, tell the developer this is a gap to resolve, and do not invent a command or
    choose a test framework.
 
-2. **Verification obligations**: for every functional requirement (`FR-`) and every
+2. **Edge case labels**: obligations and items cite edge cases by id, and the check accepts
+   an `EC-` id only if FEATURE_SPEC holds it. If FEATURE_SPEC's edge cases carry no ids,
+   label them `EC-01`, `EC-02`, in the order they appear, by adding the label at the start
+   of each edge case in FEATURE_SPEC. Do this before writing the obligations: change no
+   other word of the specification, name the labels in the Completion Report so the
+   developer can see the edit, and never name an `EC-` id that FEATURE_SPEC does not hold.
+
+3. **Verification obligations**: for every functional requirement (`FR-`) and every
    acceptance scenario (`USn-ASm`, scenario `m` of user story `n`) in FEATURE_SPEC, write
    the scenarios that verify it and what must be observed, stated without reference to the
    implementation. Add obligations for edge cases and failure conditions, and for the
@@ -52,11 +59,11 @@ replace the example rows. Follow the "Verification intent" rules in the process 
    scenario, and no more: not one per assertion, and not for a property the specification
    does not state.
 
-3. **Verification exemptions**: for a requirement that cannot sensibly be verified
+4. **Verification exemptions**: for a requirement that cannot sensibly be verified
    automatically, add a row with the reason and how it is verified instead. Write a single
    `None` row when there are no exemptions.
 
-4. **Behaviour checklist**: write `tests/behaviour-checklist.md` in FEATURE_DIR, after the
+5. **Behaviour checklist**: write `tests/behaviour-checklist.md` in FEATURE_DIR, after the
    three tables, following "Behaviour checklist" in the process rules. When `IMPL_PLAN`'s
    Verification Plan has no `### Behaviour checklist` sub-heading, add it after the
    exemptions table, followed by this line exactly:
@@ -71,13 +78,13 @@ replace the example rows. Follow the "Verification intent" rules in the process 
    example sections, and fill it from FEATURE_SPEC and the obligations and exemptions just
    written. Do not put it in `checklists/`.
 
-5. **Material ambiguity**: if a requirement is ambiguous, or contradicts another, in a way
+6. **Material ambiguity**: if a requirement is ambiguous, or contradicts another, in a way
    that changes what a test should assert, stop and ask the developer. Do not choose an
    interpretation. Leave that requirement without an obligation until the question is
    answered, record the answer under `## Clarifications` in FEATURE_SPEC, and then write
    the obligation.
 
-6. **Check**: from the repository root run
+7. **Check**: from the repository root run
 
    ```bash
    python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py plan
