@@ -2149,6 +2149,51 @@ def _deferred_compliant():
     )
 
 
+# Manual verification rules M1 and M2 (T017)
+@case("m1-missing-steps")
+def _m1_missing_steps():
+    return with_manual([mv(steps="-")])
+
+
+@case("m1-missing-expected")
+def _m1_missing_expected():
+    return with_manual([mv(expected="-")])
+
+
+@case("m1-missing-why")
+def _m1_missing_why():
+    return with_manual([mv(why="-")])
+
+
+@case("m1-bad-id")
+def _m1_bad_id():
+    return with_manual([mv("MV-1")])
+
+
+@case("m1-duplicate-id")
+def _m1_duplicate_id():
+    return with_manual([mv("MV-001"), mv("MV-001", covers="FR-001")])
+
+
+@case("m2-unknown-requirement")
+def _m2_unknown_requirement():
+    return with_manual([mv(covers="FR-099")])
+
+
+@case("m2-unknown-obligation")
+def _m2_unknown_obligation():
+    return with_manual([mv(covers="VO-009")])
+
+
+CASES["manual-none"] = lambda: with_manual([])
+
+
+@case("manual-valid")
+def _manual_valid():
+    # MV-001 covers a requirement that is also exempted (EC-08); MV-002 a scenario and an obligation.
+    return with_manual([mv("MV-001", covers="FR-003"), mv("MV-002", covers="VO-001, US1-AS2")])
+
+
 # ---------------------------------------------------------------------------
 
 
