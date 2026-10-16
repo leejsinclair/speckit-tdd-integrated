@@ -2750,6 +2750,27 @@ def refuse(message):
     return EXIT_USAGE
 
 
+def item_routes(findings):
+    """The way forward for a task held by a behaviour item (G10) or by the checklist (G11)."""
+    text = ""
+    rules = {finding.rule for finding in findings}
+    if "G10" in rules:
+        text += (
+            "A G10 finding means a behaviour item fixed at the baseline changed. Record the change, and approve it "
+            "where it alters intended behaviour:\n"
+            f"  python3 {SCRIPT_INSTALL_PATH} expectation --item <item id> --requirement <id> "
+            '--justification "<why>" [--alters-behaviour]\n'
+            f'  python3 {SCRIPT_INSTALL_PATH} approve --id <BX-nn> --by "<name>"\n'
+        )
+    if "G11" in rules:
+        text += (
+            "A G11 finding means the behaviour checklist no longer passes the plan check: return to the plan stage "
+            "and correct the specification or the Verification Plan first and then the checklist, then run plan "
+            "again.\n"
+        )
+    return text
+
+
 def completion_refusal(failing, findings):
     """What the agent is told when a task it is marking complete fails its gate."""
     first = failing[0]
@@ -2764,6 +2785,7 @@ def completion_refusal(failing, findings):
         f"       python3 {SCRIPT_INSTALL_PATH} exception --task {first} --kind <kind> "
         '--rationale "<why>" --alternative "<how it is verified instead>"\n'
         f"Check a task before marking it: python3 {SCRIPT_INSTALL_PATH} gate --task {first}\n"
+        + item_routes(findings)
     )
 
 
