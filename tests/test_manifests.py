@@ -687,5 +687,111 @@ class OlderFeatureGapTests(unittest.TestCase):
         self.assertIn("`tests/tdd-evidence.md`", flat(below))
 
 
+class WhenVerificationIsNotPossibleTests(unittest.TestCase):
+    """The addendum, the process rules and the four wrappers describe the 0.3.0 states (T021, FR-006, FR-021)."""
+
+    def addendum(self):
+        return read_repo("preset", "templates", "plan-addendum.md")
+
+    def rules_section(self):
+        text = read_repo(RULES_FILE)
+        self.assertIn("\n## When verification is not possible\n", text)
+        start = text.index("\n## When verification is not possible\n")
+        end = text.find("\n## ", start + 5)
+        return flat(text[start : end if end != -1 else len(text)])
+
+    def test_addendum_holds_the_manual_verification_table_after_the_exemptions(self):
+        lines = [line.rstrip() for line in self.addendum().splitlines()]
+        self.assertIn("### Manual verification", lines)
+        self.assertIn("| ID | Covers | Steps | Expected result | Why not automated |", lines)
+        heading = lines.index("### Manual verification")
+        self.assertGreater(heading, lines.index("### Verification exemptions"))
+        self.assertLess(heading, lines.index("### Behaviour checklist"))
+        self.assertTrue(any(line.startswith("| None |") for line in lines[heading:]))
+
+    def test_addendum_says_the_heading_is_read_and_a_project_without_tests_writes_none(self):
+        text = flat(self.addendum())
+        self.assertIn("This heading is read by the checks", text)
+        self.assertRegex(text, r"no (way to run tests|runnable test command).{0,80}single `None` row")
+
+    def test_the_evidence_template_holds_neither_new_table(self):
+        text = read_repo("templates", "tdd-evidence-template.md")
+        self.assertNotIn("## Deferrals", text)
+        self.assertNotIn("## Manual results", text)
+
+    def test_rules_section_follows_the_exceptions_and_covers_the_three_cases(self):
+        text = read_repo(RULES_FILE)
+        self.assertLess(text.index("### An exception to the cycle"), text.index("## When verification is not possible"))
+        section = self.rules_section().lower()
+        for phrase in ("no test tooling", "deferral", "manual check", "who may defer", "never chooses or installs"):
+            self.assertIn(phrase, section)
+
+    def test_rules_say_nothing_deferred_or_manual_is_reported_as_verified(self):
+        section = self.rules_section()
+        self.assertRegex(section, r"[Nn]othing deferred or manual is reported as verified")
+        self.assertIn("a person's", section)
+
+    def test_plan_wrapper_writes_the_none_row_says_so_and_carries_on(self):
+        _text, _above, below = wrapper_parts("plan")
+        step = flat(below[below.index("1. **Verification commands**") : below.index("2. **Edge case labels**")])
+        self.assertIn("`None` row", step)
+        self.assertIn("no test tooling", step)
+        self.assertIn("never chooses a framework", step)
+        self.assertIn("carry on", step)
+        self.assertNotIn("leave the table empty", step)
+        self.assertNotIn("gap to resolve", step)
+
+    def test_plan_wrapper_has_a_manual_verification_step_after_the_exemptions(self):
+        _text, _above, below = wrapper_parts("plan")
+        self.assertRegex(below, r"(?m)^\d+\. \*\*Manual verification\*\*")
+        self.assertLess(below.index("**Verification exemptions**"), below.index("**Manual verification**"))
+        self.assertLess(below.index("**Manual verification**"), below.index("**Behaviour checklist**"))
+
+    def test_plan_wrapper_check_no_longer_blames_a_missing_command(self):
+        _text, _above, below = wrapper_parts("plan")
+        check = flat(below[below.index("**Check**") :])
+        self.assertNotIn("a project with no test command", check)
+
+    def test_plan_wrapper_completion_report_counts_obligations_and_manual_checks(self):
+        _text, _above, below = wrapper_parts("plan")
+        report = flat(below[below.rindex("In the Completion Report") :]).lower()
+        self.assertIn("manual checks", report)
+        self.assertIn("no test tooling", report)
+
+    def test_tasks_wrapper_passes_a_plan_recording_no_test_tooling_and_reports_it(self):
+        text, _above, _below = wrapper_parts("tasks")
+        text = flat(text)
+        self.assertIn("no test tooling", text)
+        self.assertIn("nothing is verified by tests", text)
+
+    def test_implement_wrapper_names_defer_manual_no_tooling_mode_and_the_counts(self):
+        text, _above, _below = wrapper_parts("implement")
+        text = flat(text)
+        for phrase in (
+            "tdd_check.py defer",
+            "tdd_check.py manual",
+            "no-tooling mode",
+            "classify",
+            "deferred",
+            "manual checks",
+        ):
+            self.assertIn(phrase, text)
+        self.assertRegex(text, r"never choose.{0,40}framework")
+
+    def test_analyze_wrapper_names_the_new_rules_and_the_notices(self):
+        text, _above, _below = wrapper_parts("analyze")
+        text = flat(text)
+        for rule in ("M1", "M2", "G12", "C9"):
+            self.assertIn(rule, text)
+        self.assertIn("notice", text)
+
+    def test_no_new_text_names_a_framework(self):
+        texts = [self.addendum(), self.rules_section()]
+        texts += [wrapper_parts(stage)[0] for stage in ("plan", "tasks", "analyze", "implement")]
+        for text in texts:
+            for name in TOOL_NAMES:
+                self.assertNotIn(name, text.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
