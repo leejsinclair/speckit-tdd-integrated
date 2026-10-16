@@ -4,7 +4,7 @@ import json
 import os
 import unittest
 
-from support import RepoCase, snapshot
+from support import RepoCase, load_payload, snapshot
 
 
 class GateCase(RepoCase):
@@ -316,6 +316,57 @@ class GateAllTests(GateCase):
         self.assertEqual([item["task"] for item in data["incomplete"]], ["T013", "T014"])
         self.assertFalse(data["incomplete"][0]["would_pass"])
         self.assertEqual(data["incomplete"][0]["findings"][0]["rule"], "G3")
+
+
+class G11Tests(GateCase):
+    """G11: the checklist rules, applied to every task once the baseline is recorded."""
+
+    B1 = "G11 {task} FR-004: B1: no behaviour item expresses it"
+    B5 = "G11 {task} BI-001: B5: `src/cart.py` is a path-shaped token that spec.md does not name"
+
+    def item_lines(self, fixture, *args):
+        result = self.gate(fixture, *args)
+        return result, [line for line in result.out.splitlines() if line.startswith(("G10 ", "G11 "))]
+
+    def test_a_requirement_added_after_the_baseline_holds_every_task(self):
+        for task in ("T014", "T015"):
+            with self.subTest(task=task):
+                result, lines = self.item_lines("g11-requirement-added", "--task", task)
+                self.assertEqual(lines, [self.B1.format(task=task)])
+                self.assertEqual(result.code, 1, result)
+
+    def test_a_broken_item_holds_every_task_including_a_no_test_task(self):
+        for task in ("T014", "T015"):
+            with self.subTest(task=task):
+                result, lines = self.item_lines("g11-item-broken", "--task", task)
+                self.assertEqual(lines, [self.B5.format(task=task)])
+
+    def test_nothing_is_reported_before_the_baseline(self):
+        result, lines = self.item_lines("g11-before-baseline", "--task", "T014")
+        self.assertEqual(lines, [], result.out)
+
+    def test_nothing_is_reported_for_a_passing_checklist(self):
+        result, lines = self.item_lines("items-baseline", "--task", "T014")
+        self.assertEqual((lines, result.code), ([], 0))
+
+    def test_gate_all_reports_g11_for_completed_tasks(self):
+        root = self.repo("g11-requirement-added")
+        path = os.path.join(root, "specs", "001-demo", "tasks.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("- [ ] T015", "- [X] T015"))
+        result = self.check(["gate", "--all"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(self.B1.format(task="T015"), result.out.splitlines())
+
+    def test_the_hook_refuses_to_mark_complete_a_task_held_by_g11(self):
+        root = self.repo("g11-requirement-added")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T015", new_string="- [X] T015")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn(self.B1.format(task="T015"), result.err.splitlines())
 
 
 if __name__ == "__main__":
