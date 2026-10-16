@@ -97,3 +97,27 @@ Install the extension and preset into a throwaway project with `specify extensio
 and `specify preset add --dev`, run scenario 2 there, then remove both (`--force` for the
 extension). Expected: the same results as in this repository; removal leaves core Spec Kit
 working.
+
+## Validation results
+
+Observed results of running the scenarios and checks above, recorded as the work is done.
+
+### T004. The 0.2.0 compatibility guard fails when a stored output is wrong
+
+The guard test passes against the real `tests/fixtures/golden_0_2_0.json`, written from commit
+`542368c` (855 outputs: five commands on 171 fixtures). A scratch copy of the golden file,
+outside the repository, with one stored output changed (`valid-minimal status`, one word),
+is read by the test through `TDD_GOLDEN_0_2_0_FILE`.
+
+```text
+$ cd tests && python3 -B -m unittest test_compatibility.CompatibilityTests.test_current_script_matches_0_2_0_outputs
+Ran 1 test in 64.825s
+OK
+
+$ TDD_GOLDEN_0_2_0_FILE=<scratch>/golden_tampered.json python3 -B -m unittest test_compatibility.CompatibilityTests.test_current_script_matches_0_2_0_outputs
+AssertionError: Lists differ: ['valid-minimal status: expected 0 ...'] != []
+Ran 1 test in 64.468s
+FAILED (failures=1)
+```
+
+The baseline suite before any change of this feature: `Ran 585 tests in 129.889s OK`.
