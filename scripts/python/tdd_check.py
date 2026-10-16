@@ -1525,6 +1525,43 @@ def cmd_approve(args, root, feature_dir):
     return EXIT_OK, [], [f"recorded approval of {args.id} by {name}"], {"id": args.id}
 
 
+def manual_state(evidence, check):
+    """The latest recorded result of a manual check, as ``(result, row)``; ``("open", None)`` when it has none."""
+    found = [row for row in evidence.manual_results if row.check == check]
+    return (found[-1].result, found[-1]) if found else ("open", None)
+
+
+def cmd_manual(args, root, feature_dir):
+    """Record a person's result for a manual check. The name is recorded as given and cannot be verified."""
+    plan = require_plan(feature_dir)
+    if args.check not in {check.id for check in plan.manual_checks}:
+        raise UsageError(f"manual check {args.check} is not in the plan; nothing was recorded")
+    name = clean(args.by)
+    if name == "-":
+        raise UsageError("--by must name the person who did the check; nothing was recorded")
+    evidence = open_ledger(feature_dir)
+    ident = next_id("MR", evidence.manual_results)
+    row = {
+        "ID": ident,
+        "Time": utc_now(),
+        "Check": args.check,
+        "Result": args.result,
+        "Recorded by": name,
+        "Note": clean(args.note),
+    }
+    previous = evidence.manual_results[-1].check_value if evidence.manual_results else ""
+    row["Check value"] = manual_result_check_value(previous, row)
+    evidence.manual_results.append(
+        Item(
+            id=ident, check=args.check, result=args.result, recorded_by=name, note=undash(row["Note"]),
+            check_value=row["Check value"], cells=row,
+        )
+    )  # fmt: skip
+    write_evidence(feature_dir, evidence)
+    line = f"recorded {ident}: {args.check} {args.result} by {name}"
+    return EXIT_OK, [], [line], {"id": ident, "check": args.check, "result": args.result, "recorded_by": name}
+
+
 def environment_failure(evidence, obligation):
     """The latest record classified as an environment failure that names the obligation, or None."""
     found = [
@@ -1940,6 +1977,9 @@ def rule_b2(plan, items):
             if OBLIGATION_ID.match(entry):
                 if entry not in obligations:
                     findings.append(Finding("B2", item.id, f"{entry} is not in the Verification obligations table"))
+            elif MANUAL_ID.match(entry):
+                if entry not in {check.id for check in plan.manual_checks}:
+                    findings.append(Finding("B2", item.id, f"{entry} is not in the Manual verification table"))
             elif entry.startswith("exemption "):
                 ident = entry[len("exemption ") :].strip()
                 if ident not in exempted:
@@ -2496,6 +2536,9 @@ def item_status(entries, statuses):
     """The derived status of a behaviour item from the statuses of the obligations it names."""
     obligations = [statuses.get(entry, "planned") for entry in entries if OBLIGATION_ID.match(entry)]
     if not obligations:
+        manual = [statuses.get(entry, "open") for entry in entries if MANUAL_ID.match(entry)]
+        if manual:
+            return "manual (" + next(word for word in ("fail", "open", "pass") if word in manual) + ")"
         return "exempt" if entries else "planned"
     if all(status == "verified" for status in obligations):
         return "verified"
@@ -2593,6 +2636,8 @@ def item_change_entries(feature, analysis):
 def item_rows(feature, analysis, obligations):
     """One row per checklist item with its derived status, for the view."""
     statuses = {row["id"]: row["status"] for row in obligations}
+    for check in feature.plan.manual_checks:
+        statuses[check.id] = manual_state(feature.evidence, check.id)[0]
     tests = {row["id"]: row["tests"] for row in obligations}
     rows = []
     for section in analysis.checklist.sections:
@@ -2611,8 +2656,18 @@ def item_rows(feature, analysis, obligations):
     return rows
 
 
+def manual_entries(feature):
+    """One entry per manual check in the plan, failed ones first, with the latest result and who recorded it."""
+    entries = []
+    for check in feature.plan.manual_checks:
+        result, row = manual_state(feature.evidence, check.id)
+        reason = f"{result} by {row.recorded_by}" if row else "open"
+        entries.append({"id": check.id, "state": "manual", "reason": reason, "result": result})
+    return [e for e in entries if e["result"] == "fail"] + [e for e in entries if e["result"] != "fail"]
+
+
 def not_verified_by_tests(feature, obligations):
-    """The view keys for what tests do not verify: the no-tooling state, deferred obligations and their counts.
+    """The view keys for what tests do not verify: the no-tooling state, deferred obligations, manual checks.
 
     Empty when none applies, so a feature with a declared command and no deferral is viewed as under 0.2.0.
     """
@@ -2625,15 +2680,17 @@ def not_verified_by_tests(feature, obligations):
         if why.deferral:
             entry["deferral"] = why.deferral
         deferred.append(entry)
-    if not (deferred or feature.plan.no_tooling):
+    manual = manual_entries(feature)
+    if not (deferred or manual or feature.plan.no_tooling):
         return {}
-    extra = {
-        "not_verified_by_tests": deferred,
-        "counts": {
-            "verified": sum(1 for row in obligations if row["status"] == "verified"),
-            "deferred": len(deferred),
-        },
+    counts = {
+        "verified": sum(1 for row in obligations if row["status"] == "verified"),
+        "deferred": len(deferred),
     }
+    if manual:
+        for result, name in (("open", "manual_open"), ("fail", "manual_failed"), ("pass", "manual_passed")):
+            counts[name] = sum(1 for entry in manual if entry["result"] == result)
+    extra = {"not_verified_by_tests": deferred + manual, "counts": counts}
     if feature.plan.no_tooling:
         extra["no_tooling"] = True
     return extra
@@ -2754,7 +2811,13 @@ def view_lines(view):
             suffix = f" ({entry['deferral']})" if entry.get("deferral") else ""
             lines.append(f"- {entry['id']} {entry['state']}: {entry['reason']}{suffix}")
     if "counts" in view:
-        counts_text = ", ".join(f"{name} {number}" for name, number in view["counts"].items())
+        found = view["counts"]
+        counts_text = f"verified {found['verified']}, deferred {found['deferred']}"
+        if "manual_open" in found:
+            counts_text += f", manual checks {found['manual_open']} open"
+            for name, word in (("manual_failed", "failed"), ("manual_passed", "passed")):
+                if found[name]:
+                    counts_text += f", {found[name]} {word}"
         lines += ["", f"Counts: {counts_text}"]
     lines += [
         "",
@@ -2847,7 +2910,7 @@ def rule_c4(evidence):
                 )
             )
         previous = record.check
-    for ident in deferral_chain_breaks(evidence):
+    for ident in deferral_chain_breaks(evidence) + manual_result_chain_breaks(evidence):
         findings.append(
             Finding("C4", ident, "the check value does not match the row: the record was changed after it was written")
         )
@@ -2977,6 +3040,8 @@ def compliance_notices(feature):
         [NO_TOOLING_LINE.replace("No test tooling:", "no test tooling is recorded:")] if view.get("no_tooling") else []
     )
     for entry in view.get("not_verified_by_tests", []):
+        if entry.get("result") == "pass":
+            continue
         suffix = f" ({entry['deferral']})" if entry.get("deferral") else ""
         notices.append(f"{entry['id']} {entry['state']}: {entry['reason']}{suffix}")
     return notices
@@ -3298,6 +3363,12 @@ def build_parser():
     defer.add_argument("--vo", required=True, action="extend", nargs="+", metavar="VO", help="obligations deferred")
     defer.add_argument("--reason", required=True, help="why the test is not being run")
 
+    manual = subs.add_parser("manual", parents=[common], help="record a person's result for a manual check")
+    manual.add_argument("--check", required=True, help="an id in the Manual verification table")
+    manual.add_argument("--result", required=True, choices=MANUAL_RESULT_VALUES)
+    manual.add_argument("--by", required=True, help="the person who did the check")
+    manual.add_argument("--note", help="one line stored with the result")
+
     classify = subs.add_parser("classify", parents=[common], help="classify a failure record")
     classify.add_argument("--seq", required=True, type=int)
     classify.add_argument("--as", required=True, choices=CLASSIFICATIONS, dest="classification")
@@ -3354,6 +3425,7 @@ HANDLERS = {
     "approve": cmd_approve,
     "classify": cmd_classify,
     "defer": cmd_defer,
+    "manual": cmd_manual,
     "exception": cmd_exception,
     "decision": cmd_decision,
 }
