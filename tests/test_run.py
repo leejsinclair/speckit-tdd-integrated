@@ -3,6 +3,7 @@
 import calendar
 import os
 import re
+import shutil
 import time
 import unittest
 
@@ -845,6 +846,58 @@ class DecisionTests(RecordingCase):
         self.open("T013")
         self.check(["decision", "resolve", "--id", "DN-01", "--answer", "Zero", "--by", "Lee"], self.root)
         self.assert_only_evidence_changed(before)
+
+
+class BaselineRefusedWhileChecklistFailsTests(RunCase):
+    """The baseline is refused while the checklist fails (contracts/check-cli-changes.md section 4)."""
+
+    MESSAGE = "the behaviour checklist must pass before implementation begins"
+
+    def assert_refused(self, case, *findings):
+        self.fixture = case
+        self.setUp()
+        before = snapshot(self.root)
+        result = self.run_phase("baseline", "suite")
+        self.assertEqual(result.code, 2, result)
+        self.assertEqual(result.out, "")
+        self.assertIn(self.MESSAGE, result.err)
+        for finding in findings:
+            self.assertIn(finding, result.err.splitlines())
+        self.assertEqual(snapshot(self.root), before)
+        self.assertFalse(self.has_evidence())
+        self.assertFalse(os.path.exists(os.path.join(self.root, os.path.dirname(EVIDENCE_REL), "tdd-evidence.md")))
+
+    def test_a_failing_rule_refuses_the_baseline(self):
+        self.assert_refused("b3-unnamed", "B3 VO-002: no behaviour item names it in Verified by")
+
+    def test_a_missing_checklist_refuses_the_baseline(self):
+        self.assert_refused(
+            "checklist-missing", "CHECKLIST tests/behaviour-checklist.md: the file does not exist or cannot be read"
+        )
+
+    def test_the_tests_folder_is_not_created_where_it_was_absent(self):
+        self.fixture = "checklist-missing"
+        self.setUp()
+        folder = os.path.join(self.root, os.path.dirname(EVIDENCE_REL))
+        shutil.rmtree(folder, ignore_errors=True)
+        self.run_phase("baseline", "suite")
+        self.assertFalse(os.path.exists(folder))
+
+    def test_a_passing_checklist_lets_the_baseline_be_recorded(self):
+        self.fixture = "checklist-valid"
+        self.setUp()
+        result = self.run_phase("baseline", "suite")
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual([row["Phase"] for row in records(self.root)], ["baseline"])
+
+    def test_an_older_feature_records_its_baseline_where_its_evidence_already_is(self):
+        root = self.repo("valid-minimal")
+        top = os.path.join(root, "specs", "001-demo", "tdd-evidence.md")
+        before = len(table_rows(open(top).read(), "## Test execution records"))
+        result = self.check(["run", "--phase", "baseline", "--command", "suite"], root)
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(len(table_rows(open(top).read(), "## Test execution records")), before + 1)
+        self.assertFalse(os.path.exists(os.path.join(root, "specs", "001-demo", "tests")))
 
 
 if __name__ == "__main__":
