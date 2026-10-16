@@ -440,3 +440,38 @@ class ManualComplianceTests(ComplianceCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+NO_TOOLING_RUN = os.path.join("examples", "runs", "no-tooling")
+DEFERRED_RUN = os.path.join("examples", "runs", "deferred")
+
+
+class NewExampleRunTests(unittest.TestCase):
+    """The no-tooling and deferred examples pass the compliance check with the notices the quickstart lists."""
+
+    def compliance(self, run):
+        if not os.path.isdir(os.path.join(REPO, run)):
+            raise AssertionError(f"missing example run: {run}")
+        return run_check(["compliance", "--feature-dir", run], REPO)
+
+    def test_the_no_tooling_example_is_compliant_with_notices(self):
+        result = self.compliance(NO_TOOLING_RUN)
+        lines = result.out.splitlines()
+        self.assertEqual((result.code, lines[0]), (0, "COMPLIANT"), result)
+        self.assertIn("notice: no test tooling is recorded: nothing is verified by tests", lines)
+        self.assertIn("notice: VO-001 deferred: no test tooling", lines)
+
+    def test_the_deferred_example_is_compliant_with_deferral_notices_and_no_manual_notice(self):
+        result = self.compliance(DEFERRED_RUN)
+        lines = result.out.splitlines()
+        self.assertEqual((result.code, lines[0]), (0, "COMPLIANT"), result)
+        self.assertTrue(any(line.startswith("notice: VO-002 deferred:") for line in lines), lines)
+        self.assertTrue(any(line.startswith("notice: VO-003 deferred:") for line in lines), lines)
+        self.assertFalse(any("manual" in line for line in lines), lines)
+        self.assertFalse(any(line.startswith("notice: VO-001") for line in lines), lines)
+
+    def test_the_runs_readme_names_both(self):
+        with open(os.path.join(REPO, "examples", "runs", "README.md")) as handle:
+            text = handle.read()
+        for name in ("no-tooling/", "deferred/"):
+            self.assertIn(name, text)
