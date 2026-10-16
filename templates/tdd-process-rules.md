@@ -20,8 +20,12 @@ Two things do the work:
   work it guards; it is never downgraded to a note.
 
 Verification intent is kept in the feature's `plan.md` (the Verification Plan section) and
-`tasks.md` (task labels). Evidence is kept in `tdd-evidence.md` in the feature directory,
-which only the check script writes.
+`tasks.md` (task labels). The behaviour items the feature must show are kept in
+`tests/behaviour-checklist.md`, which the plan stage writes. Evidence is kept in one
+document that only the check script writes: `tests/tdd-evidence.md` for a feature planned
+after the behaviour checklist was introduced, and `tdd-evidence.md` at the top of the
+feature directory for a feature whose evidence was started before. A feature never holds
+both.
 
 ## Verification intent
 
@@ -83,6 +87,85 @@ the way to bring the feature under the process, and then carries on as core Spec
 No check is run and no evidence is recorded for it, and its work is never described as
 verified.
 
+## Behaviour checklist
+
+The behaviour checklist states, in the specification's terms, each behaviour the feature
+must show, and links it to the requirements it comes from and to the obligations that
+verify it. It lets a person judge, before any code is written, whether the planned
+verification covers what the specification asks.
+
+**When and by whom.** The plan stage writes it, after the Verification Plan, because its
+items name obligations and exemptions the Verification Plan holds. Start from the
+extension's template, `.specify/extensions/integrated-tdd/templates/behaviour-checklist-template.md`.
+The Verification Plan carries a `### Behaviour checklist` sub-heading with a fixed line
+linking to the file. The heading is read by the checks: keep it, and add it when the plan
+lacks it.
+
+**Where.** `tests/behaviour-checklist.md` in the feature directory, and never in
+`checklists/`. Spec Kit's own checklist scan reads `checklists/`, and a file there with
+unchecked boxes would hold up implementation; this file has no checkboxes and is not a
+requirements-quality review. The `tests/` folder holds verification material about the
+feature. It is not where the project's executable tests live. The evidence document goes
+in the same folder for a feature planned after the checklist was introduced
+(`tests/tdd-evidence.md`); a feature whose evidence was started earlier keeps
+`tdd-evidence.md` at the top of the feature directory. A feature never holds both.
+
+**Layout.** Write one section per acceptance scenario, in order, headed `## USn-ASm`, which opens
+with the scenario's text from the specification as a block quote, word for word. Then one
+`## Other behaviours` section, when needed, for behaviour that refines no scenario: a
+requirement with no scenario of its own, an edge case with an outcome of its own, a
+measured success criterion the Verification Plan verifies. Under a section, each item is
+one line,
+
+```text
+- **BI-001** Expresses: FR-001, US1-AS1. Verified by: VO-001.
+```
+
+followed by indented clauses in the order Given, When, Then (`**Given**`, `**When**`,
+`**Then**`), with `**And**` clauses where one action has several outcomes. *Expresses* lists the `FR-`,
+`SC-`, `USn-ASm` and `EC-` ids the item comes from. *Verified by* lists `VO-` obligations
+and `exemption <requirement id>` entries. Item ids are `BI-` and three digits, numbered in
+order of creation and never reused.
+
+**What an item says.**
+
+- An item refines a scenario: it keeps the scenario's terms and states every outcome the
+  scenario states, none weaker. It may add concrete values and the boundary the
+  specification describes. It never replaces an outcome with a vaguer one (FR-016).
+- State what can be observed at the boundary the specification describes: what a user sees
+  or can do, what a caller receives, what is stored and can be read back, what is refused
+  (FR-011).
+- An item names no file, module, function, class, table, endpoint or screen component, and
+  no step of how the feature is built (FR-012). The exception is a file the specification
+  itself names as part of the behaviour it describes: the check allows what the
+  specification says.
+- Add no behaviour the specification does not state (FR-013). A behaviour found in the
+  code and not in the specification is not an item: it is a question for the developer.
+- Keep it in proportion. One item per behaviour, and no two items for one behaviour
+  (FR-015). A small, low-risk change has one item per acceptance scenario and per
+  requirement with no scenario, and no more.
+- There is no checkbox and no status in the file (FR-014). What is verified is derived from
+  the evidence and shown by `status`.
+- A requirement that has an exemption still gets an item, whose *Verified by* is the
+  exemption: the item states what is expected, and the exemption says how it is checked
+  instead.
+- Edge cases and measured success criteria that the Verification Plan verifies get items
+  under Other behaviours.
+- When a requirement is ambiguous in a way that changes what an item should say, put the
+  question to the developer as under "Verification intent" and leave the item out until it
+  is answered.
+
+**Check.** The `plan` check covers the checklist: every requirement and scenario is named
+by an item, every item names obligations or exemptions that exist, every obligation is
+named by an item, the format holds, no item names a code element the design introduces,
+and every quote matches the specification. The plan is not complete while a finding
+remains. The check does not decide whether an item keeps its scenario's wording closely
+enough, whether two items describe one behaviour, or whether an item adds behaviour; those
+are for the plan stage to get right and for the reviewer to judge.
+
+**Review.** The plan stage ends by naming the checklist's location and asking for it to be
+reviewed against the specification. No approval is requested and nothing waits for one.
+
 ## The Red, Green, Refactor cycle
 
 Implementation proceeds one behaviour at a time. Every result comes from the check
@@ -137,8 +220,8 @@ baseline exists.
 - When a run fails, resolve the failure before starting dependent work (FR-026). The
   section on failures says how.
 - Before marking a task complete, run `gate --task <task id>`. The edit that marks a task
-  `[X]` is refused while its gate fails. Never edit `tdd-evidence.md`: only the script
-  writes it.
+  `[X]` is refused while its gate fails. Never edit `tdd-evidence.md` or
+  `tests/tdd-evidence.md`: only the script writes the evidence.
 - A routine cycle involves no approval request (FR-053). Ask the developer only for what
   the sections on test integrity and on failures, exceptions and decisions name.
 
