@@ -30,7 +30,9 @@ class BaselineFirstTests(RunCase):
         self.assert_refused(self.green())
 
     def test_refactor_is_refused_without_a_baseline(self):
-        self.assert_refused(self.run_phase("refactor", "unit", "--select", "pass", "--task", "T012", "--vo", "VO-001"))
+        self.assert_refused(
+            self.run_phase("refactor", "unit", "--select", "pass", "--task", "T012", "--vo", "VO-001")
+        )
 
     def test_checkpoint_is_refused_without_a_baseline(self):
         self.assert_refused(self.run_phase("checkpoint", "suite"))

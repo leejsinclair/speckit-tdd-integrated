@@ -543,7 +543,9 @@ class ItemViewTests(RepoCase):
 
     def test_an_item_with_obligations_and_an_exemption_is_judged_on_the_obligations(self):
         result = self.status("items-status-mixed-exemption")
-        self.assertIn("| BI-006 | - | VO-001, exemption FR-003 | verified | assert, pass |", result.out.splitlines())
+        self.assertIn(
+            "| BI-006 | - | VO-001, exemption FR-003 | verified | assert, pass |", result.out.splitlines()
+        )
 
     def test_no_item_is_verified_while_an_obligation_it_names_is_not(self):
         for case in ("items-status-partial", "items-status-failed", "items-status-blocked", "items-status-exempt"):
@@ -559,7 +561,9 @@ class ItemViewTests(RepoCase):
             "item-removed": "**Item changes**: BI-004 removed, not recorded.",
             "item-change-recorded": "**Item changes**: BX-01 on BI-002 (recorded).",
             "item-change-awaiting-approval": "**Item changes**: BX-01 on BI-002, alters behaviour (awaiting approval).",
-            "item-change-approved": ("**Item changes**: BX-01 on BI-002, alters behaviour (approved by Lee Sinclair)."),
+            "item-change-approved": (
+                "**Item changes**: BX-01 on BI-002, alters behaviour (approved by Lee Sinclair)."
+            ),
             "item-removal-recorded": "**Item changes**: BX-01 on BI-004, removed (recorded).",
             "item-id-reused": "**Item changes**: BX-01 on BI-004, removed (recorded); BI-004 id reused.",
         }

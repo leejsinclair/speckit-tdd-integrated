@@ -34,7 +34,9 @@ class FirstRulesTests(GateCase):
         self.assert_passes("gate-g1-pass", "T015")
 
     def test_g3_fails_without_a_valid_failing_first_record(self):
-        self.assert_fails("gate-g3-fail", "T011", "G3 T011 VO-001: no valid failing-first record and no exception")
+        self.assert_fails(
+            "gate-g3-fail", "T011", "G3 T011 VO-001: no valid failing-first record and no exception"
+        )
 
     def test_g3_fails_with_no_evidence_document_at_all(self):
         root = self.repo("gate-g3-pass")

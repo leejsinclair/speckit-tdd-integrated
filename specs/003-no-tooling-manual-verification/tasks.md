@@ -192,7 +192,7 @@ done test-first
 - [X] T037 Run story 09 with Claude Code in an empty project, once with Haiku and once with Sonnet at low effort, record each command's outcome, whether a framework was chosen or installed, and the final report's wording in `quickstart.md` Validation results. If a model stops at a stage, record where and why; fix a wrapper only test-first
 - [~] T038 Person step: give the README and `templates/tdd-process-rules.md` to a reader who has not seen this feature and ask the three questions of User Story 4; record the answers and whether each came from the text alone (SC-005). If the person declines, mark `[~] [SKIPPED: developer step, not done]` [SKIPPED: developer step, not done]
 - [X] T039 Re-read `plan.md` Constitution Check and Complexity Tracking against what was built; record in `plan.md` any difference, including the limits as built, and ask the maintainer to confirm any new departure before it is kept
-- [ ] T040 Replay the history: for every test task above, show with `git log` that a commit whose tests fail precedes the implementation commit that makes them pass, by checking out the test commit in a scratch worktree and running the named tests; record the table of task, failing commit, passing commit and results in `quickstart.md` Validation results
+- [X] T040 Replay the history: for every test task above, show with `git log` that a commit whose tests fail precedes the implementation commit that makes them pass, by checking out the test commit in a scratch worktree and running the named tests; record the table of task, failing commit, passing commit and results in `quickstart.md` Validation results
 
 ---
 

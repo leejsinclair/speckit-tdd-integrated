@@ -68,7 +68,9 @@ class RuleTests(ComplianceCase):
         )
 
     def test_c5_completed_task_that_fails_its_gate(self):
-        self.assert_non_compliant("compliance-c5-fail", "C5 T012 #3: G9: command 'adhoc' is not declared in the plan")
+        self.assert_non_compliant(
+            "compliance-c5-fail", "C5 T012 #3: G9: command 'adhoc' is not declared in the plan"
+        )
 
     def test_c5_applies_every_gate_rule_to_completed_tasks(self):
         lines = self.assert_non_compliant("gate-all-fail", only=False)

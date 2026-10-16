@@ -141,10 +141,14 @@ checks, and applies the same two limits (2 s for a check, 1 s for the hook).
 - `python3 -m unittest discover -s tests`: `Ran 788 tests in 219.090s`, `OK`.
 - The same under Python 3.9.25: `Ran 788 tests in 166.341s`, `OK`.
 - `uvx ruff check .`: `All checks passed!`.
-- `uvx ruff format --check .`: `2 files would be reformatted`: `tests/test_evidence_location.py`
-  and `tests/test_performance.py`. In `test_performance.py` the lines it would change are ones
-  written before this feature; the code added here is formatted. Existing tests are not edited
-  (SC-006), so both are left for the maintainer.
+- `uvx ruff format --check .` (after T040): `6 files would be reformatted`:
+  `tests/test_compliance.py`, `tests/test_evidence_location.py`, `tests/test_gate.py`,
+  `tests/test_performance.py`, `tests/test_run.py` and `tests/test_status.py`. In every one the
+  lines it would change were written before this feature; the code added here is formatted.
+  Existing tests are not edited (SC-006), so they are left for the maintainer. (At T034 the
+  figure was 2, because an earlier format run had reflowed four existing assertions in
+  `test_compliance.py`, `test_gate.py`, `test_run.py` and `test_status.py`; T040 found it
+  and restored the original lines. No assertion changed.)
 - `npx markdownlint-cli2`: `Summary: 0 issues in 0 files` (82 files).
 
 ### T035. Scenarios 2 to 5 against the examples
@@ -230,3 +234,37 @@ why.
   `plan.md`'s Verification commands table ... Then the nine test tasks can be written and run
   through the Red, Green, Refactor cycle."
 - **Framework chosen or installed**: no, for both. `gate --all` passed for both.
+
+### T040. History replayed
+
+For each test task, the test commit and the implementation commit were checked out in a scratch
+worktree and the test files that the test commit changed were run by name
+(`python3 -m unittest discover -s tests -p <file>`).
+
+| Task | Failing commit | Result at the failing commit | Passing commit | Result there |
+|------|----------------|------------------------------|----------------|--------------|
+| T005 | `907f91f` | `test_parsing.py` failures 22, errors 14 | `fd392d6` | OK |
+| T007 | `b26fccc` | `test_trace.py` failures 3, errors 1 | `dd5ed83` | OK |
+| T009 | `8e862c3` | `test_gate.py` 10, `test_hook.py` 3, `test_run.py` 2 failures | `0c07af2` | all OK |
+| T011 | `c9b6b98` | `test_compliance.py` 5, `test_status.py` 4 failures and 1 error | `19d40a4` | all OK |
+| T013 | `c0993da` | `test_defer.py` failures 21, errors 2 | `8ad2933` | OK |
+| T015 | `d07cd01` | `test_compliance.py` 3, `test_gate.py` 12, `test_hook.py` 4, `test_status.py` 7 failures and 1 error | `77ab206` | all OK |
+| T017 | `2c0adcf` | `test_manual.py` failures 13 | `09637e4` | OK |
+| T019 | `b1d1bd5` | `test_checklist.py` 4, `test_compliance.py` 4, `test_manual.py` 11, `test_status.py` 6 failures and errors | `70e4125` | all OK |
+| T021 | `48f6d6c` | `test_manifests.py` failures 11, errors 1 | `f9adf96` | OK |
+| T028 | `cac9504` | `test_compliance.py` failures 3 | `f9d43f3` | OK |
+| T033 | `07c967a` | `test_manifests.py` failures 2 | `3670206` | OK |
+
+T001 and T002 (fixture helpers) and T004 (the 0.2.0 guard, which passes against the real file
+and fails against a changed copy, recorded under T004) have no failing commit of this kind.
+T032 passed on its first run, the exception approved for performance tests, and its limits were
+shown reachable (T032).
+
+**Existing tests.** Compared by syntax tree with the commit before the task work (`16e0746`),
+no existing test function, class or fixture directory was removed or changed. The shared
+helpers in `tests/fixtures/make_features.py` (`check_value` now calls a new `check_over`) and
+`tests/fixtures/make_golden.py` (it now writes the 0.2.0 file as well) were extended to serve
+the new guard and tables, with the same behaviour for existing callers. `build_feature` in
+`tests/test_performance.py` gained an optional argument. T040 also found four existing
+assertions that a formatter run had reflowed onto one line each, with the same meaning, and
+restored them to their original text.
