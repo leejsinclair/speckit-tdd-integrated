@@ -234,3 +234,20 @@ to scenarios 3 to 6 and 8 and do not replace them.
 - **Completion Report**: named the location, the 6 sections and 7 items and the result of the check, and ended "Please review the checklist against the spec." It asked for no approval.
 - **Approval requested on account of the checklist (SC-010)**: none.
 - The project is kept at the path recorded in the session for T029.
+
+### T029: quickstart scenario 4, a failing checklist blocks (User Story 2)
+
+- **Date**: 2026-10-16. The project kept from T017, with both packages reinstalled from `git archive` of commit `e80b85e`, then `/speckit-tasks` run through `claude -p` (16 tasks; the check reported no finding against the checklist).
+- **Before the changes**: the checklist as the plan stage wrote it failed `plan`. Three items (BI-005, BI-006, BI-007) expressed `EC-01`, `EC-02` and `EC-03`, which the specification does not hold because it lists its edge cases without ids, and the plan check reported `B6 BI-005: Expresses EC-01, which spec.md does not hold` and the same for the other two. The first run of the plan stage could not have caught it: the script installed then had no checklist rule. The three ids were removed (`EC-03` replaced by `FR-004`) so that the next changes start from a passing checklist.
+- **Changes and findings** (each restored afterwards; `plan` passed again after the last):
+
+| Change | Finding reported |
+|--------|------------------|
+| Delete BI-001, the only item naming FR-001 | `B1 FR-001: no behaviour item expresses it`, `B1 US1-AS1: ...`, `B3 VO-001: no behaviour item names it in Verified by`, `B4 US1-AS1: the scenario section has no items` |
+| Replace `VO-002` with `VO-001` in the Verified by list | `B3 VO-002: no behaviour item names it in Verified by` |
+| Replace a Then clause with `**Then** test_cart reports 17` (a name from the task list) | `B5 BI-001: \`test_cart\` is a code-shaped token that plan.md or tasks.md names and spec.md does not` |
+| Change `17` to `18` in the US1-AS1 quote | `B6 US1-AS1: the quote differs from the scenario text in spec.md` |
+
+- **Two differences from the quickstart's table.** The table suggests `cart_total()` as the name from the plan. The specification of this feature already names `cart_total` and `item_count`, so B5 correctly did not report them; `test_cart`, which only the task list holds, was used instead. Running this row first with `item_count()` showed that B5 compared a token literally and did not match the bare name in the task list; `name()` now also matches `name` (commit `e80b85e`), with a fixture and test written first.
+- **Implement stopped**: with the quote finding left in place and no evidence document, `/speckit-implement` (through `claude -p`) stopped before the first task. It reported `B6 US1-AS1`, the quote saying 18 against 17 in the specification, changed no file, marked no task, and said the checklist is corrected by the plan stage. `CHECK run --phase baseline --command make-test` exited 2 with the message and the finding, and `tests/` held only `behaviour-checklist.md`.
+- The checklist was restored and `plan` passes; the project is kept for T033 and T046.
