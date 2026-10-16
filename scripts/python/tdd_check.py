@@ -37,7 +37,7 @@ TESTS_EVIDENCE_FILE = TESTS_DIR + "/" + EVIDENCE_FILE
 EVIDENCE_IN_TWO_PLACES = (
     f"evidence is in two places: {EVIDENCE_FILE} and {TESTS_EVIDENCE_FILE}; keep one and remove the other"
 )
-GUARDED_FILES = (TASKS_FILE, EVIDENCE_FILE)
+GUARDED_FILES = (PLAN_FILE, TASKS_FILE, EVIDENCE_FILE)
 
 VERIFICATION_PLAN_HEADING = "## Verification Plan"
 
@@ -2379,6 +2379,11 @@ EVIDENCE_REFUSAL = (
     f"  python3 {SCRIPT_INSTALL_PATH} run --phase <phase> --command <id> ...\n"
 )
 PAYLOAD_REFUSAL = "Integrated TDD: cannot read the tool call payload"
+PLAN_HEADINGS = (VERIFICATION_PLAN_HEADING, CHECKLIST_MARKER)
+PLAN_REFUSAL = (
+    "Integrated TDD: The Verification Plan and its Behaviour checklist sub-heading are read by the checks "
+    "and cannot be removed through the agent's edit tools: this edit would remove "
+)
 
 
 def refuse(message):
@@ -2413,6 +2418,32 @@ def newly_completed(before, after):
     return found
 
 
+def guard_plan(call, path):
+    """Refuse an edit that would remove a heading the checks read from a plan.md that holds it."""
+    try:
+        current = read_text(path)
+        if current is None:
+            return EXIT_OK
+        headings = [heading for heading in PLAN_HEADINGS if heading in plan_headings(current)]
+        if not headings:
+            return EXIT_OK
+        kept = plan_headings(call.result(current))
+    except ValueError as error:
+        return refuse(f"{PAYLOAD_REFUSAL}: {error}")
+    except (OSError, UnicodeDecodeError) as error:
+        return refuse(f"Integrated TDD: cannot read {PLAN_FILE}: {error}")
+    removed = [heading for heading in headings if heading not in kept]
+    if removed:
+        return refuse(PLAN_REFUSAL + ", ".join(f"`{heading}`" for heading in removed))
+    return EXIT_OK
+
+
+def plan_headings(text):
+    """The headings of PLAN_HEADINGS that the text holds, each on a line of its own."""
+    lines = {line.rstrip() for line in text.splitlines()}
+    return [heading for heading in PLAN_HEADINGS if heading in lines]
+
+
 def cmd_hook(args, root):
     """Decide whether a tool call may proceed. Exit 0 allows, exit 2 refuses."""
     raw = sys.stdin.read()
@@ -2434,6 +2465,8 @@ def cmd_hook(args, root):
         return EXIT_OK
 
     path = call.file_path if os.path.isabs(call.file_path) else os.path.join(root, call.file_path)
+    if name == PLAN_FILE:
+        return guard_plan(call, path)
     # The guard follows the file: its own directory is the feature directory, or the
     # parent of a ``tests`` directory for the evidence document.
     feature_dir = os.path.dirname(path)
