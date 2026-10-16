@@ -347,3 +347,9 @@ to scenarios 3 to 6 and 8 and do not replace them.
 | T020+ | 6b71c94 | test_checklist.py: 15 tests, FAILED (failures=1) | e80b85e | test_checklist.py: 15 tests, OK |
 | T032 | ff9b4c3 | test_manifests.py: 74 tests, FAILED (failures=1, errors=4) | 462cf7c | test_manifests.py: 74 tests, OK |
 | T045+ | ceb68c9 | test_item_changes.py: 28 tests, FAILED (failures=1); test_gate.py: 61 tests, FAILED (failures=1) | 882d510 | test_item_changes.py: 28 tests, OK; test_gate.py: 61 tests, OK |
+
+### Review by the project owner (T049, T056; T033 and T046 in part)
+
+- **Date**: 2026-10-16. The project owner read the spec and behaviour checklist of every set: `examples/runs/compliant`, `examples/runs/frontend-planned`, the cart-total project of T017 to T046, and the Haiku runs of stories 01, 07 and 08. Reported verbatim in substance: the documents "look good". No omission, weakened outcome, duplicate or code-level wording was reported.
+- **T049 (SC-009)** and the reviewer's notes of **T056** are taken as met by this review.
+- **Still open, because they need a time**: T033 (judge a checklist against its spec in under ten minutes, SC-004), T046 (name the requirements and tests of three random items in under two minutes each, SC-003) and T057 (a new developer answers four questions in under five minutes, SC-008). Three items of the T046 project were picked at random for the owner to answer: BI-006, BI-001 and BI-002.
