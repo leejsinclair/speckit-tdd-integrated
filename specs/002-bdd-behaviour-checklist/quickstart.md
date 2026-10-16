@@ -359,3 +359,7 @@ to scenarios 3 to 6 and 8 and do not replace them.
 - **Date**: 2026-10-16. The project owner, who took no part in writing the checklists, checked each checklist against its specification in **about 5 minutes per document**, against the 10 minute limit, and found no omission or excess.
 - **Limit of this evidence**: the documents were small (4 to 9 items, 3 to 7 scenarios). SC-004 speaks of a representative feature of 10 to 20 requirements, so this shows the check is quick on small features and does not show the same for the size the criterion names.
 - **Not asked or not answered**: whether the owner could name each item's requirement without the plan or the task list (US3 scenario 1). It is recorded as not separately tested.
+
+### T046 (timed steps) and T057: skipped
+
+- **Date**: 2026-10-16. At the project owner's request the steps that need a person to be timed are skipped for now: the three timed items of T046 (SC-003) and the whole of T057 (SC-008). The machine part of T046 is recorded above. Both tasks are marked `[~]` in `tasks.md` and are open.
