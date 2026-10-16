@@ -173,3 +173,22 @@ Each was run in a scratch copy of the example. The check script is called from t
 - **5, older features**: `plan`, `gate --all`, `status` and `compliance` on
   `examples/runs/compliant/` all exit 0, and the compatibility tests compare the output with
   the 0.2.0 golden file.
+
+### T036. Installation regression
+
+A release tree from `git archive HEAD` was installed into a throwaway project made with
+`specify init --here --force --non-interactive --integration claude --script sh`, using
+`specify extension add --dev` and `specify preset add --dev` (both v0.3.0, enabled).
+
+- The composed skills carry the new wrapper text: `speckit-plan`, `speckit-tasks`,
+  `speckit-analyze` and `speckit-implement` name `tdd_check.py`, and the plan and implement
+  skills hold the Manual verification and "When verification is not possible" wording.
+- Scenario 2 in that project, from a copy of `examples/runs/no-tooling/`: `plan: passed (no
+  test tooling recorded)`, `tasks: passed`, `gate: passed, 5 completed tasks`, `COMPLIANT`
+  with the three notices. The same as in this repository.
+- After `specify preset remove integrated-tdd` and `specify extension remove integrated-tdd
+  --force`, `speckit-plan/SKILL.md` has no `tdd_check.py` reference, the core skills are
+  still present, and the extension is no longer listed.
+- The command forms differ from the scenario text: `--dev` takes the path
+  (`specify extension add --dev <path>`), and `specify init` takes `--integration claude`,
+  not `--ai`.
