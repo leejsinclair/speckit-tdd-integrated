@@ -491,6 +491,57 @@ class ReviewingTheChecklistTests(unittest.TestCase):
         self.assertIn("status --scenarios", report)
 
 
+class BehaviourItemGuidanceTests(unittest.TestCase):
+    def implement(self):
+        return flat(wrapper_parts("implement")[2])
+
+    def test_implement_wrapper_records_an_item_change_with_expectation_item(self):
+        found = self.implement()
+        self.assertIn("### A behaviour item changed after the baseline", found)
+        self.assertIn("tdd_check.py expectation --item <item id>", found)
+        self.assertIn("approval", found[found.index("### A behaviour item changed") :])
+
+    def test_implement_wrapper_approves_an_item_change_that_alters_behaviour(self):
+        section = self.implement()
+        section = section[section.index("### A behaviour item changed") :]
+        self.assertIn("alters intended behaviour", section)
+        self.assertIn("tdd_check.py approve --id <BX-nn>", section)
+        self.assertIn("Until then the item's tasks stay incomplete (G10)", section)
+
+    def test_implement_wrapper_explains_the_red_refusal(self):
+        found = self.implement()
+        self.assertIn("an obligation that no behaviour item names", found)
+        self.assertIn("add it to an existing or new item first", found)
+
+    def test_implement_wrapper_explains_a_g11_refusal(self):
+        found = self.implement()
+        self.assertIn("G11", found)
+        self.assertIn("correct the specification or the Verification Plan first and then the checklist", found)
+        self.assertIn("rerun `plan`", found)
+
+    def test_implement_end_of_stage_report_lists_behaviour_items_not_verified(self):
+        found = self.implement()
+        report = found[found.index("### End-of-stage report") :]
+        self.assertIn("every behaviour item that is not verified, with the reason", report)
+
+    def test_tasks_addendum_says_each_obligation_must_be_named_by_an_item(self):
+        text = flat(read_repo("preset", "templates", "tasks-addendum.md"))
+        self.assertIn("each obligation a test task names must be named by a behaviour item", text)
+
+    def test_rules_put_the_behaviour_item_in_the_traceability_chain(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("## Traceability and review evidence") :])
+        self.assertIn("requirement, behaviour item, obligation, task, test, record", section)
+        self.assertIn("linked to a behaviour item before its test is written", section)
+
+    def test_rules_say_how_items_are_fixed_and_changed(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("## Behaviour checklist") : text.index("## The Red, Green, Refactor cycle")])
+        self.assertIn("fixed from the first recorded run", section)
+        self.assertIn("expectation --item", section)
+        self.assertIn("approved when it alters behaviour", section)
+
+
 GAP_PHRASE = "no `### Behaviour checklist` sub-heading"
 
 
