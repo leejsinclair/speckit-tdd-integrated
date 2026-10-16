@@ -296,6 +296,14 @@ class PlanGuardTests(SituationCase):
         result = self.edit_plan("## Verification Plan", "## Testing notes")
         self.assert_heading_refused(result, "## Verification Plan")
 
+    def test_recorded_edit_removing_the_checklist_heading_is_refused(self):
+        result = self.hook(load_payload("edit-plan-remove-checklist-heading.json", self.root))
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_recorded_edit_removing_the_verification_plan_heading_is_refused(self):
+        result = self.hook(load_payload("edit-plan-remove-verification-plan.json", self.root))
+        self.assert_heading_refused(result, "## Verification Plan")
+
     def test_an_edit_that_rewords_text_and_keeps_both_headings_is_allowed(self):
         self.assert_allowed(self.edit_plan("Add a cart total.", "Add the cart total."))
         self.assert_allowed(self.hook(load_payload("edit-plan.json", self.root)))

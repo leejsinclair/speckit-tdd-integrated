@@ -11,8 +11,8 @@
   "tool_name": "Edit",
   "tool_input": {
     "file_path": "{ROOT}/specs/001-demo/plan.md",
-    "old_string": "Add a cart total.",
-    "new_string": "Add the cart total.",
+    "old_string": "validate-then-sum function",
+    "new_string": "validate-then-add function",
     "replace_all": false
   },
   "tool_use_id": "toolu_recorded"
