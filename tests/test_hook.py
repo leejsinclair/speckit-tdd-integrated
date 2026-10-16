@@ -257,6 +257,84 @@ class EvidenceEditTests(SituationCase):
             self.assertIn("Evidence is written only by the check script", result.err, name)
 
 
+class PlanGuardTests(SituationCase):
+    """An edit that would remove a heading the checks read is refused (check-cli-changes.md section 5)."""
+
+    fixture = "checklist-valid"
+    HEADING_MESSAGE = (
+        "The Verification Plan and its Behaviour checklist sub-heading are read by the checks "
+        "and cannot be removed through the agent's edit tools"
+    )
+
+    def plan_text(self):
+        return read(self.feature(self.root), "plan.md")
+
+    def edit_plan(self, old, new):
+        return self.hook(self.payload("edit-plan.json", old_string=old, new_string=new))
+
+    def assert_heading_refused(self, result, heading):
+        self.assertEqual(result.code, 2, result)
+        self.assertEqual(result.out, "")
+        self.assertIn(self.HEADING_MESSAGE, " ".join(result.err.split()))
+        self.assertIn(heading, result.err)
+
+    def test_an_edit_removing_the_checklist_heading_is_refused(self):
+        result = self.edit_plan("### Behaviour checklist", "### Notes")
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_a_write_removing_the_checklist_heading_is_refused(self):
+        content = self.plan_text().replace("### Behaviour checklist", "### Notes")
+        result = self.hook(self.payload("write-plan.json", content=content))
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_a_multiedit_removing_the_checklist_heading_is_refused(self):
+        edits = [{"old_string": "### Behaviour checklist", "new_string": "### Notes", "replace_all": False}]
+        result = self.hook(self.payload("multiedit-plan.json", edits=edits))
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_an_edit_removing_the_verification_plan_heading_is_refused(self):
+        result = self.edit_plan("## Verification Plan", "## Testing notes")
+        self.assert_heading_refused(result, "## Verification Plan")
+
+    def test_an_edit_that_rewords_text_and_keeps_both_headings_is_allowed(self):
+        self.assert_allowed(self.edit_plan("Add a cart total.", "Add the cart total."))
+        self.assert_allowed(self.hook(load_payload("edit-plan.json", self.root)))
+
+    def test_a_write_that_keeps_both_headings_is_allowed(self):
+        content = self.plan_text().replace("Add a cart total.", "Add the cart total.")
+        self.assert_allowed(self.hook(self.payload("write-plan.json", content=content)))
+
+    def test_adding_the_checklist_heading_to_a_plan_that_lacks_it_is_allowed(self):
+        write(self.root, ["specs", "001-demo", "plan.md"], PLAN_WITH_SECTION)
+        content = PLAN_WITH_SECTION + "\n### Behaviour checklist\n"
+        self.assert_allowed(self.hook(self.payload("write-plan.json", content=content)))
+
+    def test_an_older_plan_with_neither_heading_is_not_guarded(self):
+        write(self.root, ["specs", "001-demo", "plan.md"], "# Plan\n\n## Summary\n\nAdd a cart total.\n")
+        self.assert_allowed(self.edit_plan("Add a cart total.", "Add the cart total."))
+
+    def test_an_older_plan_with_the_verification_plan_cannot_lose_it_either(self):
+        write(self.root, ["specs", "001-demo", "plan.md"], PLAN_WITH_SECTION)
+        result = self.edit_plan("## Verification Plan", "## Testing notes")
+        self.assert_heading_refused(result, "## Verification Plan")
+
+    def test_an_edit_to_the_checklist_is_allowed_without_reading_any_artefact(self):
+        with open(os.path.join(self.feature(self.root), "plan.md"), "wb") as handle:
+            handle.write(b"\xff\xfe not text \xff")
+        self.assert_allowed(self.hook(load_payload("edit-checklist.json", self.root)))
+
+    def test_a_relative_path_is_guarded_too(self):
+        payload = self.payload(
+            "edit-plan.json", file_path="specs/001-demo/plan.md", old_string="### Behaviour checklist", new_string="x"
+        )
+        self.assert_heading_refused(self.hook(payload), "### Behaviour checklist")
+
+    def test_the_hook_changes_no_file(self):
+        before = snapshot(self.root)
+        self.edit_plan("### Behaviour checklist", "### Notes")
+        self.assertEqual(snapshot(self.root), before)
+
+
 class FailClosedTests(SituationCase):
     """The stop fails closed, for the two guarded files only."""
 

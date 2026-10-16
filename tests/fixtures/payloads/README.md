@@ -12,6 +12,8 @@ by a second, temporary hook that copied its standard input to a file.
 | `write-tasks.json` | Write | Recorded |
 | `edit-unrelated.json` | Edit | Recorded |
 | `edit-evidence-in-tests.json` | Edit | Hand-written from `edit-evidence.json`, with the path under `tests/` |
+| `edit-plan.json`, `write-plan.json`, `multiedit-plan.json` | Edit, Write, MultiEdit | Hand-written from `edit-tasks.json`, for `plan.md` |
+| `edit-checklist.json` | Edit | Hand-written from `edit-tasks.json`, for `tests/behaviour-checklist.md` |
 | `multiedit-evidence.json` | MultiEdit | Hand-written |
 | `multiedit-tasks.json` | MultiEdit | Hand-written |
 
