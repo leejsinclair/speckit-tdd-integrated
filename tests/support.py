@@ -172,7 +172,8 @@ def table_rows(text, heading):
     return [dict(zip(table[0], cells)) for cells in table[2:]]
 
 
-EVIDENCE_REL = os.path.join(FEATURE_REL, "tdd-evidence.md")
+EVIDENCE_REL = os.path.join(FEATURE_REL, "tests", "tdd-evidence.md")
+TOP_EVIDENCE_REL = os.path.join(FEATURE_REL, "tdd-evidence.md")
 CHECKLIST_REL = os.path.join(FEATURE_REL, "tests", "behaviour-checklist.md")
 
 
@@ -200,9 +201,10 @@ class RunCase(RepoCase):
 
     def setUp(self):
         self.root = self.repo(self.fixture)
-        evidence = os.path.join(self.root, EVIDENCE_REL)
-        if os.path.isfile(evidence):
-            os.remove(evidence)
+        for rel in (EVIDENCE_REL, TOP_EVIDENCE_REL):
+            evidence = os.path.join(self.root, rel)
+            if os.path.isfile(evidence):
+                os.remove(evidence)
         write(self.root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
 
     def run_phase(self, phase, command, *extra, **kwargs):

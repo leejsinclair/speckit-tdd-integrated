@@ -1051,6 +1051,30 @@ def _compliance_c7_fail_stale_plan():
 
 
 # ---------------------------------------------------------------------------
+# Evidence location cases (T006)
+# ---------------------------------------------------------------------------
+
+
+@case("evidence-top")
+def _evidence_top():
+    return variant()
+
+
+@case("evidence-tests")
+def _evidence_tests():
+    files = variant()
+    files["tests/tdd-evidence.md"] = files.pop("tdd-evidence.md")
+    return files
+
+
+@case("evidence-both")
+def _evidence_both():
+    files = variant()
+    files["tests/tdd-evidence.md"] = files["tdd-evidence.md"]
+    return files
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
