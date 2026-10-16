@@ -2035,6 +2035,39 @@ def _no_tooling_with_runs():
 
 
 # ---------------------------------------------------------------------------
+# Deferral, User Story 2 (T013)
+# ---------------------------------------------------------------------------
+
+ENV_FAILURE_VO1 = rec(
+    "T011", "VO-001", "red", "unit", "assert", "fail", "yes", "environment", "tests/test_cart.py", FP_A,
+    "expected: AssertionError",
+)  # fmt: skip
+
+
+@case("defer-env-failure")
+def _defer_env_failure():
+    # Record 4 is a failure of VO-002 classified environment; VO-001 has no such failure.
+    return variant(evidence=evidence(VALID_RECORDS + [ENV_FAILURE]))
+
+
+@case("defer-two-obligations")
+def _defer_two_obligations():
+    # Each obligation has its own environment failure: #4 for VO-001 and #5 for VO-002.
+    return variant(evidence=evidence(VALID_RECORDS + [ENV_FAILURE_VO1, ENV_FAILURE]))
+
+
+@case("defer-no-failure")
+def _defer_no_failure():
+    # No evidence document at all: nothing was ever run.
+    return variant(evidence=None)
+
+
+@case("defer-no-tooling")
+def _defer_no_tooling():
+    return no_tooling()
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
