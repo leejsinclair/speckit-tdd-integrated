@@ -290,3 +290,7 @@ to scenarios 3 to 6 and 8 and do not replace them.
 - **Shown reachable, by size**: `TDD_PERF_SCALE=10` (2,000 items, 2,000 tasks, 10,000 records) made five tests fail on their limits: `compliance` 59.7s, `gate --all` 31.6s, a `hook` on a task completion 26.6s, `plan` 26.3s and `status` 2.17s against the 2 second limit. The same limit failures are the known cost of scale that the README lists: the checks scan every record per task.
 - **Shown reachable, by limit**: `tasks` and the two `plan.md` hooks stayed within their limits even at `TDD_PERF_SCALE=40`, so the size route could not show them failing. `TDD_PERF_LIMIT_SCALE` (new) multiplies the limits; at `0.001` every timing test of `ChecklistPerformanceCase` failed with a message such as `tasks took 0.08s, limit 0.002s` and `hook took 0.07s, limit 0.001s`.
 - No correction to `tdd_check.py` was needed to meet a limit at the stated size.
+
+### T059: the suite on Python 3.9
+
+- **Date**: 2026-10-16. `uv run --python 3.9 python -B -m unittest discover -s tests`: `Ran 574 tests in 217.429s`, `OK`. No code in `scripts/python/tdd_check.py` or `tests/` needed a later version.
