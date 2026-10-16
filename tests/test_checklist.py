@@ -60,6 +60,7 @@ EXPECTED = {
     "b5-path": [path_shaped("src/cart.py")],
     "b5-identifier": [code_shaped("cart_total()")],
     "b5-backticked": [code_shaped("subtotal")],
+    "b5-call-form": [code_shaped("item_count()")],
     "b6-unknown-fr": [f"B6 BI-001: Expresses FR-099, {IN_SPEC}"],
     "b6-unknown-ec": [f"B6 BI-001: Expresses EC-99, {IN_SPEC}"],
     "b6-unknown-prefix": [f"B6 BI-001: Expresses XY-001, which has no recognised prefix ({PREFIXES})"],
@@ -84,6 +85,7 @@ PASSING = [
     "b5-spec-names-path",
     "b5-identifier-not-in-design",
     "b6-quote-emphasis-only",
+    "b5-call-form-in-spec",
 ]
 B7_CASE = "b7-untraced-test-task"
 B7_FINDING = "B7 T011: names only obligations that no behaviour item names"

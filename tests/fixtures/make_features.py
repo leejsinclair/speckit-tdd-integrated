@@ -1380,6 +1380,25 @@ def _b5_identifier():
     return cl_case(sections=cl_sections(items1=[item]), tasks=TASKS_NAME_CART_TOTAL)
 
 
+@case("b5-call-form")
+def _b5_call_form():
+    # The task list names item_count without parentheses; the clause calls it with them.
+    tasks = swap(TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total beside item_count in src/cart.py")
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "item_count() is called"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]), tasks=tasks)
+
+
+@case("b5-call-form-in-spec")
+def _b5_call_form_in_spec():
+    # The specification names item_count (without parentheses), so the clause may call it.
+    spec = swap(SPEC, "- A price of zero is allowed.", "- A price of zero is allowed.\n- The item_count of a cart is not changed.")
+    tasks = swap(TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total beside item_count in src/cart.py")
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "item_count() is called"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]), spec=spec, tasks=tasks)
+
+
 @case("b5-backticked")
 def _b5_backticked():
     return cl_case(
