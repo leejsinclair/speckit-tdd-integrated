@@ -11,6 +11,7 @@ OUT_OF_DATE = (
 )
 COMPLIANT_RUN = os.path.join("examples", "runs", "compliant")
 TESTS_ONLY_RUN = os.path.join("examples", "runs", "tests-only")
+FRONTEND_RUN = os.path.join("examples", "runs", "frontend-planned")
 
 
 class ComplianceCase(RepoCase):
@@ -225,9 +226,14 @@ class ExampleRunTests(unittest.TestCase):
 
     def require(self, feature_dir):
         """The run's artefacts must be there. An empty directory is not a run: git does not track one."""
-        for name in ("spec.md", "plan.md", "tasks.md", "tdd-evidence.md"):
+        for name in ("spec.md", "plan.md", "tasks.md"):
             if not os.path.isfile(os.path.join(REPO, feature_dir, name)):
                 raise AssertionError(f"missing example run artefact: {feature_dir}/{name}")
+        found = [
+            os.path.join(REPO, feature_dir, *parts) for parts in (["tdd-evidence.md"], ["tests", "tdd-evidence.md"])
+        ]
+        if not any(os.path.isfile(path) for path in found):
+            raise AssertionError(f"missing example run artefact: {feature_dir}/tdd-evidence.md")
 
     def run_on(self, feature_dir):
         self.require(feature_dir)
@@ -244,6 +250,34 @@ class ExampleRunTests(unittest.TestCase):
         self.assertEqual(lines[0], "NON-COMPLIANT")
         self.assertTrue(any("G3: no valid failing-first record and no exception" in line for line in lines), lines)
         self.assertFalse(any(line.startswith("C4 ") for line in lines), lines)
+
+    def test_the_compliant_run_keeps_its_checklist_and_evidence_in_tests(self):
+        self.require(COMPLIANT_RUN)
+        base = os.path.join(REPO, COMPLIANT_RUN)
+        self.assertTrue(os.path.isfile(os.path.join(base, "tests", "behaviour-checklist.md")))
+        self.assertTrue(os.path.isfile(os.path.join(base, "tests", "tdd-evidence.md")))
+        self.assertFalse(os.path.exists(os.path.join(base, "tdd-evidence.md")))
+
+    def test_the_frontend_example_passes_the_plan_check_and_has_a_scenario_section(self):
+        base = os.path.join(REPO, FRONTEND_RUN)
+        for name in ("spec.md", "plan.md", os.path.join("tests", "behaviour-checklist.md")):
+            if not os.path.isfile(os.path.join(base, name)):
+                raise AssertionError(f"missing example artefact: {FRONTEND_RUN}/{name}")
+        result = run_check(["plan", "--feature-dir", FRONTEND_RUN], REPO)
+        self.assertEqual((result.code, result.out), (0, "plan: passed\n"), result)
+        with open(os.path.join(base, "tests", "behaviour-checklist.md")) as handle:
+            sections = [line for line in handle if line.startswith("## US")]
+        self.assertGreaterEqual(len(sections), 1)
+
+    def test_story_08_exists_and_expects_b5_and_b1(self):
+        path = os.path.join(REPO, "examples", "stories", "08-behaviours-from-the-code.md")
+        if not os.path.isfile(path):
+            raise AssertionError("missing story: examples/stories/08-behaviours-from-the-code.md")
+        with open(path) as handle:
+            text = handle.read()
+        expected = text.split("## Expected behaviour", 1)[1]
+        self.assertIn("B5", expected)
+        self.assertIn("B1", expected)
 
     def test_two_runs_give_byte_identical_output(self):
         for feature_dir in (COMPLIANT_RUN, TESTS_ONLY_RUN):
