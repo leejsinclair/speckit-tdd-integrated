@@ -320,3 +320,30 @@ to scenarios 3 to 6 and 8 and do not replace them.
 - `uvx ruff check .`: `All checks passed!`.
 - `npx -y markdownlint-cli2`: `Linting: 63 files`, `Summary: 0 issues in 0 files`.
 - Findings fixed along the way: line length and unused imports in the new tests; files opened and not closed in four of them (the `ResourceWarning`s of earlier full runs); none remain.
+
+### T063: Red before Green replayed from git history
+
+- **Date**: 2026-10-16. For the commit of each test task, a temporary `git worktree` was checked out, the test modules that commit names were run there with `python3 -B -m unittest discover -s tests -p <module>`, and the same modules were run at the implementation commit that follows. The whole suite was not run at each of the 34 checkouts (it takes about two minutes); the modules are those the commit message lists as failing. Not replayed, as the task says: T005 (a guard that passes when written, shown to fail against an altered golden file in its own entry) and T058 (measures existing code, shown reachable in its own entry).
+- **Result**: every test commit fails for the reason its message gives and every implementation commit passes the same modules. The counts equal those in the messages: for example T006 fails 18 + 77 + 3 = 98 tests, as its message states, and T010 fails with `failures=14, errors=4`. Four test commits beyond the list in the task were replayed because they were made fail-first too: the B5 follow-up, the reviewing-the-checklist guidance (T032), the hook's way-forward text for G10 and G11, and T025/T027.
+- **Mismatches**: none in the failures. One commit message misstates a count: the message of the commit for T024 says "Ran 475 tests" for a full-suite run that printed 477. No history was rewritten.
+- T036, T038, T040 and T042 share one implementation commit, so T037, T039 and T041 are matched with it as T035 is.
+
+| Task | Test commit | Named modules at the test commit | Implementation commit | Same modules at the implementation commit |
+|------|-------------|----------------------------------|-----------------------|-------------------------------------------|
+| T006 | bf23939 | test_evidence_location.py: 13 tests, FAILED (failures=18); test_run.py: 86 tests, FAILED (failures=77); test_status.py: 29 tests, FAILED (failures=3) | cae6e5a | test_evidence_location.py: 13 tests, OK; test_run.py: 86 tests, OK; test_status.py: 29 tests, OK |
+| T008 | 1d3fbfd | test_parsing.py: 63 tests, FAILED (failures=21, errors=5) | ca06a96 | test_parsing.py: 63 tests, OK |
+| T010 | 6b3ac8b | test_manifests.py: 62 tests, FAILED (failures=14, errors=4) | 0bb2d3a | test_manifests.py: 62 tests, OK |
+| T019 | c4c6c32 | test_checklist.py: 15 tests, FAILED (failures=39, errors=1) | 88dce80 | test_checklist.py: 15 tests, OK |
+| T021 | 0425310 | test_run.py: 91 tests, FAILED (failures=3) | 6f17612 | test_run.py: 91 tests, OK |
+| T023 | 3bfc647 | test_hook.py: 55 tests, FAILED (failures=6) | 8bee329 | test_hook.py: 55 tests, OK |
+| T025 | a095ae2 | test_manifests.py: 69 tests, FAILED (failures=13) | f56d64b | test_manifests.py: 69 tests, OK |
+| T030 | ff06da3 | test_status.py: 35 tests, FAILED (failures=5); test_cli.py: 14 tests, FAILED (failures=1) | 25c983e | test_status.py: 35 tests, OK; test_cli.py: 14 tests, OK |
+| T035 | 22b8d3d | test_item_changes.py: 27 tests, FAILED (failures=18); test_gate.py: 60 tests, FAILED (failures=6) | 3b000cb | test_item_changes.py: 27 tests, OK; test_gate.py: 60 tests, OK |
+| T037 | f5aa6cf | test_run.py: 95 tests, FAILED (failures=1) | 3b000cb | test_run.py: 95 tests, OK |
+| T039 | 7cceaff | test_status.py: 47 tests, FAILED (failures=20, errors=1) | 3b000cb | test_status.py: 47 tests, OK |
+| T041 | 9c95008 | test_compliance.py: 40 tests, FAILED (failures=6) | 3b000cb | test_compliance.py: 40 tests, OK |
+| T043 | 5ef534b | test_manifests.py: 82 tests, FAILED (failures=7, errors=1) | bc9c9b2 | test_manifests.py: 82 tests, OK |
+| T047 | 1889128 | test_compliance.py: 43 tests, FAILED (failures=3) | e54094a | test_compliance.py: 43 tests, OK |
+| T020+ | 6b71c94 | test_checklist.py: 15 tests, FAILED (failures=1) | e80b85e | test_checklist.py: 15 tests, OK |
+| T032 | ff9b4c3 | test_manifests.py: 74 tests, FAILED (failures=1, errors=4) | 462cf7c | test_manifests.py: 74 tests, OK |
+| T045+ | ceb68c9 | test_item_changes.py: 28 tests, FAILED (failures=1); test_gate.py: 61 tests, FAILED (failures=1) | 882d510 | test_item_changes.py: 28 tests, OK; test_gate.py: 61 tests, OK |
