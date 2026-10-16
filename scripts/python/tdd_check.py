@@ -32,6 +32,11 @@ EXIT_USAGE = 2
 PLAN_FILE = "plan.md"
 TASKS_FILE = "tasks.md"
 EVIDENCE_FILE = "tdd-evidence.md"
+TESTS_DIR = "tests"
+TESTS_EVIDENCE_FILE = TESTS_DIR + "/" + EVIDENCE_FILE
+EVIDENCE_IN_TWO_PLACES = (
+    f"evidence is in two places: {EVIDENCE_FILE} and {TESTS_EVIDENCE_FILE}; keep one and remove the other"
+)
 GUARDED_FILES = (TASKS_FILE, EVIDENCE_FILE)
 
 VERIFICATION_PLAN_HEADING = "## Verification Plan"
@@ -474,10 +479,10 @@ def yes_no(value, name, subject, findings):
     return value == "yes"
 
 
-def make_record(row, findings):
+def make_record(row, findings, name=EVIDENCE_FILE):
     """A Test Execution Record from its row of cells, or None when it has no sequence number."""
     if not row["Seq"].isdigit():
-        findings.append(Finding("EVIDENCE", EVIDENCE_FILE, f"Seq '{row['Seq']}' is not a number"))
+        findings.append(Finding("EVIDENCE", name, f"Seq '{row['Seq']}' is not a number"))
         return None
     subject = "#" + row["Seq"]
     check_enum(row["Phase"], PHASES, "phase", "EVIDENCE", subject, findings)
@@ -503,12 +508,14 @@ def make_record(row, findings):
     )
 
 
-def parse_evidence(text):
-    """Read every table of tdd-evidence.md."""
+def parse_evidence(text, name=EVIDENCE_FILE):
+    """Read every table of the evidence document, whose path relative to the feature is ``name``."""
     findings = []
-    evidence = Item(baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=findings)
+    evidence = Item(
+        baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=findings, name=name
+    )
 
-    for row in read_table(text, BASELINE_HEADING, BASELINE_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+    for row in read_table(text, BASELINE_HEADING, BASELINE_HEADER, "EVIDENCE", name, findings):
         evidence.baseline.append(
             Item(
                 seq=row["Seq"],
@@ -519,12 +526,12 @@ def parse_evidence(text):
             )
         )
 
-    for row in read_table(text, RECORDS_HEADING, RECORDS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
-        record = make_record(row, findings)
+    for row in read_table(text, RECORDS_HEADING, RECORDS_HEADER, "EVIDENCE", name, findings):
+        record = make_record(row, findings, name)
         if record is not None:
             evidence.records.append(record)
 
-    for row in read_table(text, EXCEPTIONS_HEADING, EXCEPTIONS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+    for row in read_table(text, EXCEPTIONS_HEADING, EXCEPTIONS_HEADER, "EVIDENCE", name, findings):
         check_enum(row["Kind"], EXCEPTION_KINDS, "kind", "EVIDENCE", row["ID"], findings)
         evidence.exceptions.append(
             Item(
@@ -541,7 +548,7 @@ def parse_evidence(text):
             )
         )
 
-    for row in read_table(text, EXPECTATIONS_HEADING, EXPECTATIONS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+    for row in read_table(text, EXPECTATIONS_HEADING, EXPECTATIONS_HEADER, "EVIDENCE", name, findings):
         evidence.expectations.append(
             Item(
                 id=row["ID"],
@@ -557,7 +564,7 @@ def parse_evidence(text):
             )
         )
 
-    for row in read_table(text, DECISIONS_HEADING, DECISIONS_HEADER, "EVIDENCE", EVIDENCE_FILE, findings):
+    for row in read_table(text, DECISIONS_HEADING, DECISIONS_HEADER, "EVIDENCE", name, findings):
         check_enum(row["Status"], ("open", "resolved"), "status", "EVIDENCE", row["ID"], findings)
         evidence.decisions.append(
             Item(
@@ -669,17 +676,36 @@ def check_value(previous, cells):
     return hashlib.sha256((previous + "\n" + "|".join(chained)).encode("utf-8")).hexdigest()[:6]
 
 
-def empty_evidence():
-    return Item(baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=[], text=None)
+def evidence_name(feature_dir):
+    """The evidence document's path relative to the feature directory, from what is on disk.
+
+    The top-level document, or the one in ``tests/``; ``tests/`` when there is none yet.
+    Both is an error: no choice is made between them.
+    """
+    top = os.path.isfile(os.path.join(feature_dir, EVIDENCE_FILE))
+    inside = os.path.isfile(os.path.join(feature_dir, TESTS_DIR, EVIDENCE_FILE))
+    if top and inside:
+        raise UsageError(EVIDENCE_IN_TWO_PLACES)
+    return EVIDENCE_FILE if top else TESTS_EVIDENCE_FILE
+
+
+def empty_evidence(path=TESTS_EVIDENCE_FILE):
+    """Evidence with no document yet: findings name it as 0.1.0 did, and the first write goes to ``path``."""
+    return Item(
+        baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=[], text=None,
+        name=EVIDENCE_FILE, path=path,
+    )  # fmt: skip
 
 
 def load_evidence(feature_dir):
     """The parsed evidence document. A feature with no document yet has empty evidence."""
-    text = read_text(os.path.join(feature_dir, EVIDENCE_FILE))
+    name = evidence_name(feature_dir)
+    text = read_text(os.path.join(feature_dir, name))
     if text is None:
-        return empty_evidence()
-    evidence = parse_evidence(text)
+        return empty_evidence(name)
+    evidence = parse_evidence(text, name)
     evidence.text = text
+    evidence.path = name
     return evidence
 
 
@@ -690,7 +716,7 @@ def open_ledger(feature_dir):
     except (OSError, UnicodeDecodeError) as error:
         raise UsageError(f"cannot read {EVIDENCE_FILE}: {error}") from error
     if evidence.findings:
-        raise UsageError(f"{EVIDENCE_FILE} is malformed: {evidence.findings[0].reason}")
+        raise UsageError(f"{evidence.name} is malformed: {evidence.findings[0].reason}")
     return evidence
 
 
@@ -757,9 +783,10 @@ def render_evidence(feature_dir, evidence, now):
 
 
 def write_evidence(feature_dir, evidence):
-    """Rewrite tdd-evidence.md whole, with a fresh Summary."""
+    """Rewrite the evidence document whole, with a fresh Summary. The first write creates ``tests/``."""
     text = render_evidence(feature_dir, evidence, utc_now())
-    path = os.path.join(feature_dir, EVIDENCE_FILE)
+    path = os.path.join(feature_dir, evidence.path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     partial = path + ".partial"
     with open(partial, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -1037,7 +1064,7 @@ def cmd_approve(args, root, feature_dir):
     evidence = open_ledger(feature_dir)
     entry = next((item for item in evidence.expectations + evidence.exceptions if item.id == args.id), None)
     if entry is None:
-        raise UsageError(f"no entry {args.id} in {EVIDENCE_FILE}; nothing was recorded")
+        raise UsageError(f"no entry {args.id} in {evidence.name}; nothing was recorded")
     if entry.cells["Approved by"] != "-":
         raise UsageError(f"{args.id} is already approved by {entry.cells['Approved by']}; nothing was recorded")
     name = clean(args.by)
@@ -1052,7 +1079,7 @@ def cmd_classify(args, root, feature_dir):
     evidence = open_ledger(feature_dir)
     record = next((item for item in evidence.records if item.seq == args.seq), None)
     if record is None:
-        raise UsageError(f"no record #{args.seq} in {EVIDENCE_FILE}")
+        raise UsageError(f"no record #{args.seq} in {evidence.name}")
     if record.result == "pass":
         raise UsageError(f"record #{args.seq} is a pass and has no classification")
     if record.classification != "unclassified":
@@ -1133,7 +1160,7 @@ def cmd_decision(args, root, feature_dir):
     evidence = open_ledger(feature_dir)
     decision = next((item for item in evidence.decisions if item.id == args.id), None)
     if decision is None:
-        raise UsageError(f"no decision {args.id} in {EVIDENCE_FILE}; nothing was recorded")
+        raise UsageError(f"no decision {args.id} in {evidence.name}; nothing was recorded")
     if decision.cells["Status"] != "open":
         raise UsageError(f"{args.id} is already resolved; nothing was recorded")
     answer = clean(args.answer)
@@ -1770,13 +1797,13 @@ def rule_c6(evidence):
     """A baseline comes first, and the latest checkpoint passed or its failure is pre-existing and reported."""
     records = evidence.records
     if not any(record.phase == "baseline" for record in records):
-        return [Finding("C6", EVIDENCE_FILE, "no baseline record")]
+        return [Finding("C6", evidence.name, "no baseline record")]
     findings = []
     if records[0].phase != "baseline":
         findings.append(Finding("C6", f"#{records[0].seq}", "the first record is not a baseline"))
     checkpoints = [record for record in records if record.phase == "checkpoint"]
     if not checkpoints:
-        findings.append(Finding("C6", EVIDENCE_FILE, "no checkpoint record"))
+        findings.append(Finding("C6", evidence.name, "no checkpoint record"))
         return findings
     latest = checkpoints[-1]
     if counts(latest):
@@ -1818,7 +1845,7 @@ def rule_c7(feature):
         findings.append(
             Finding(
                 "C7",
-                EVIDENCE_FILE,
+                feature.evidence.name,
                 "the Summary is out of date: it differs from the view regenerated from plan.md and the tables",
             )
         )
@@ -1976,8 +2003,11 @@ def cmd_hook(args, root):
         return EXIT_OK
 
     path = call.file_path if os.path.isabs(call.file_path) else os.path.join(root, call.file_path)
-    # The guard follows the file: its own directory is the feature directory.
+    # The guard follows the file: its own directory is the feature directory, or the
+    # parent of a ``tests`` directory for the evidence document.
     feature_dir = os.path.dirname(path)
+    if name == EVIDENCE_FILE and os.path.basename(feature_dir) == TESTS_DIR:
+        feature_dir = os.path.dirname(feature_dir)
     try:
         if not has_verification_plan(feature_dir):
             return EXIT_OK
