@@ -5,10 +5,9 @@ a passing fixture gives ``plan: passed``. The output is the same on ten consecut
 """
 
 import json
-import os
 import unittest
 
-from support import FEATURE_REL, RepoCase, fixture_text
+from support import FEATURE_REL, RepoCase, fixture_text, read
 
 FILE = "tests/behaviour-checklist.md"
 NO_ITEM = "no behaviour item expresses it"
@@ -142,10 +141,10 @@ class PlanRuleTests(RepoCase):
 
     def test_the_checklist_is_not_written(self):
         root = self.repo("b6-wrong-scenario")
-        path = os.path.join(root, FEATURE_REL, "tests", "behaviour-checklist.md")
-        before = open(path).read()
+        parts = [FEATURE_REL, "tests", "behaviour-checklist.md"]
+        before = read(root, *parts)
         self.check(["plan"], root)
-        self.assertEqual(open(path).read(), before)
+        self.assertEqual(read(root, *parts), before)
 
 
 class TasksRuleTests(RepoCase):

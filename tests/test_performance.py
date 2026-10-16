@@ -3,7 +3,8 @@
 These tests measure code that already exists, so they are expected to pass on their first
 run (plan.md, Constitution Check IV, second recorded exception). Each limit was shown to
 be reachable by running the same test against a larger generated feature: set
-``TDD_PERF_SCALE`` to multiply the feature's size, for example ``TDD_PERF_SCALE=20``. The
+``TDD_PERF_SCALE`` to multiply the feature's size, for example ``TDD_PERF_SCALE=20``, or
+``TDD_PERF_LIMIT_SCALE`` to shrink the limits. The
 runs are recorded in specs/001-integrated-tdd/quickstart.md, Validation results.
 """
 
@@ -14,15 +15,30 @@ import tempfile
 import time
 import unittest
 
-from fixtures.make_features import PLAN, baseline, chain, checkpoint, evidence, green, rec, red
+from fixtures.make_features import (
+    MARKER,
+    PLAN,
+    baseline,
+    chain,
+    checkpoint,
+    evidence,
+    green,
+    item_fp,
+    item_tables,
+    rec,
+    red,
+)
 from support import FEATURE_REL, run_check, write
 
 SCALE = max(1, int(os.environ.get("TDD_PERF_SCALE", "1")))
 OBLIGATIONS = 100 * SCALE  # two tasks each: 200 tasks at scale 1
 RECORDS = 1000 * SCALE
+ITEMS = 200 * SCALE  # two behaviour items per obligation
 
-HOOK_LIMIT = 1.0
-CHECK_LIMIT = 2.0
+# ``TDD_PERF_LIMIT_SCALE`` multiplies both limits, for example 0.001 to show that a test fails on its time limit.
+LIMIT_SCALE = float(os.environ.get("TDD_PERF_LIMIT_SCALE", "1"))
+HOOK_LIMIT = 1.0 * LIMIT_SCALE
+CHECK_LIMIT = 2.0 * LIMIT_SCALE
 
 
 def build_feature(root):
@@ -134,6 +150,68 @@ class PerformanceCase(unittest.TestCase):
         elapsed = time.perf_counter() - started
         self.assertEqual((result.code, result.err), (0, ""), result)
         self.assertLess(elapsed, HOOK_LIMIT)
+
+
+def build_checklist_feature(root):
+    """The same feature with a behaviour checklist of ITEMS items, all fixed at the baseline."""
+    build_feature(root)
+    plan_path = os.path.join(root, FEATURE_REL, "plan.md")
+    with open(plan_path) as handle:
+        plan = handle.read()
+    write(root, [FEATURE_REL, "plan.md"], plan.rstrip("\n") + "\n\n" + MARKER)
+    lines = ["# Behaviour Checklist: performance\n\n## Other behaviours\n\n"]
+    rows = []
+    for n in range(1, ITEMS + 1):
+        requirement = (n + 1) // 2
+        clauses = [
+            ("Given", f"a cart of kind {n}"),
+            ("When", "the shopper asks for the total"),
+            ("Then", f"outcome {n}"),
+        ]
+        lines.append(f"- **BI-{n:03d}** Expresses: FR-{requirement:03d}. Verified by: VO-{requirement:03d}.\n")
+        lines.extend(f"  - **{keyword}** {text}\n" for keyword, text in clauses)
+        fingerprint = item_fp({"clauses": clauses})
+        rows.append(
+            {"Item": f"BI-{n:03d}", "Verified by": f"VO-{requirement:03d}", "Fingerprint": fingerprint, "Seq": "1"}
+        )
+    write(root, [FEATURE_REL, "tests", "behaviour-checklist.md"], "".join(lines))
+    evidence_path = os.path.join(root, FEATURE_REL, "tdd-evidence.md")
+    with open(evidence_path) as handle:
+        text = handle.read()
+    write(root, [FEATURE_REL, "tdd-evidence.md"], text + item_tables(rows, []))
+
+
+class ChecklistPerformanceCase(PerformanceCase):
+    """The same limits for a feature with 200 behaviour items (research D13)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix="tdd-perf-")
+        cls.addClassCleanup(shutil.rmtree, cls.root, True)
+        cls.record_count = build_checklist_feature(cls.root)
+        write(cls.root, [".specify", "feature.json"], json.dumps({"feature_directory": FEATURE_REL}))
+
+    def test_the_generated_feature_has_the_stated_size(self):
+        with open(os.path.join(self.root, FEATURE_REL, "tests", "behaviour-checklist.md")) as handle:
+            self.assertEqual(sum(1 for line in handle if line.startswith("- **BI-")), ITEMS)
+        result = run_check(["plan"], self.root)
+        self.assertEqual((result.code, result.out), (0, "plan: passed\n"), result)
+
+    def test_hook_on_a_plan_edit_decides_within_the_limit(self):
+        plan = os.path.join(self.root, FEATURE_REL, "plan.md")
+        elapsed, result = self.timed(["hook"], self.payload(plan, "Add a cart total.", "Add the cart total."))
+        self.assertEqual((result.code, result.err), (0, ""), result)
+        self.assertLess(elapsed, HOOK_LIMIT, f"hook took {elapsed:.2f}s, limit {HOOK_LIMIT}s")
+
+    def test_hook_refusing_a_heading_removal_decides_within_the_limit(self):
+        plan = os.path.join(self.root, FEATURE_REL, "plan.md")
+        elapsed, result = self.timed(["hook"], self.payload(plan, "### Behaviour checklist", "### Notes"))
+        self.assertEqual(result.code, 2, result)
+        self.assertLess(elapsed, HOOK_LIMIT, f"hook took {elapsed:.2f}s, limit {HOOK_LIMIT}s")
+
+    def test_gate_all_reports_no_item_finding(self):
+        result = run_check(["gate", "--all"], self.root)
+        self.assertEqual(result.code, 0, result.out[:300])
 
 
 if __name__ == "__main__":
