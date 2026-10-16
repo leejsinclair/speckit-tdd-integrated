@@ -173,6 +173,12 @@ def table_rows(text, heading):
 
 
 EVIDENCE_REL = os.path.join(FEATURE_REL, "tdd-evidence.md")
+CHECKLIST_REL = os.path.join(FEATURE_REL, "tests", "behaviour-checklist.md")
+
+
+def write_checklist(root, text):
+    """Write ``tests/behaviour-checklist.md`` into the feature directory of ``root``."""
+    return write(root, CHECKLIST_REL.split(os.sep), text)
 
 
 def evidence_text(root):

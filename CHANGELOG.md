@@ -4,6 +4,8 @@ All notable changes to this project are recorded here. Versions follow semantic 
 
 ## Unreleased
 
+### 0.2.0
+
 ### 0.1.0
 
 First release: the `integrated-tdd` extension and preset.

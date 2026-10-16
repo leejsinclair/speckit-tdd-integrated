@@ -301,6 +301,56 @@ def variant(**changes):
     return files
 
 
+MARKER = (
+    "### Behaviour checklist\n\n"
+    "Behaviour items are in [tests/behaviour-checklist.md](tests/behaviour-checklist.md).\n"
+)
+
+
+def checklist_text(sections, other=None, name="001-demo"):
+    """Write the checklist format of contracts/behaviour-checklist.md section 1.
+
+    ``sections`` is a list of ``(heading, quote, items)`` with ``heading`` such as
+    ``US1-AS1``; ``other`` is a list of items or None. An item is a dict with ``id``,
+    ``expresses`` and ``verified`` (lists or strings) and ``clauses``, a list of
+    ``(keyword, text)`` pairs.
+    """
+
+    def join(value):
+        return value if isinstance(value, str) else ", ".join(value)
+
+    def item_lines(item):
+        lines = [f"- **{item['id']}** Expresses: {join(item['expresses'])}. Verified by: {join(item['verified'])}."]
+        lines += [f"  - **{keyword}** {text}" for keyword, text in item["clauses"]]
+        return lines
+
+    out = ["# Behaviour Checklist: " + name, ""]
+    for heading, quote, items in sections:
+        out += ["## " + heading, ""]
+        if quote is not None:
+            out += ["> " + line for line in quote.splitlines()] + [""]
+        for item in items:
+            out += item_lines(item)
+        out.append("")
+    if other is not None:
+        out += ["## Other behaviours", ""]
+        for item in other:
+            out += item_lines(item)
+        out.append("")
+    return "\n".join(out)
+
+
+def with_checklist(checklist=None, **changes):
+    """A ``variant()`` whose plan holds ``MARKER`` and that carries ``tests/behaviour-checklist.md``."""
+    files = variant(**changes)
+    plan = files["plan.md"]
+    if MARKER not in plan:
+        files["plan.md"] = swap(plan, "\n## Project Structure", "\n" + MARKER + "\n## Project Structure")
+    if checklist is not None:
+        files["tests/behaviour-checklist.md"] = checklist
+    return files
+
+
 CASES = {}
 
 
@@ -1009,7 +1059,9 @@ def write_case(name, files):
         shutil.rmtree(folder)
     os.makedirs(folder)
     for filename, text in sorted(files.items()):
-        with open(os.path.join(folder, filename), "w", encoding="utf-8") as handle:
+        path = os.path.join(folder, filename)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
 
 
