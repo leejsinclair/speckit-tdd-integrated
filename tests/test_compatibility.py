@@ -8,9 +8,7 @@ behaviour, so it passes when written.
 
 import json
 import os
-import shutil
 import sys
-import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures"))
