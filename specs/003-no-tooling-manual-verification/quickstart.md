@@ -121,3 +121,17 @@ FAILED (failures=1)
 ```
 
 The baseline suite before any change of this feature: `Ran 585 tests in 129.889s OK`.
+
+### T032. Performance with 50 deferrals and 50 manual checks
+
+`DeferralPerformanceCase` in `tests/test_performance.py` builds the 200-task, 1,000-record
+feature with the first 50 obligations deferred (approved, basis other) and 50 recorded manual
+checks, and applies the same two limits (2 s for a check, 1 s for the hook).
+
+- Scale 1: all 10 tests pass (about 2 s in all).
+- `TDD_PERF_LIMIT_SCALE=0.001`: 7 tests fail on their time limits (`plan`, `tasks`,
+  `gate --all`, `status`, `compliance` and both hook tests), so each limit is reachable.
+- `TDD_PERF_SCALE=10`: `gate --all` took 35.40 s and `compliance` 36.98 s against the 2 s
+  limit; the other tests passed. This is the slowdown at about ten times the stated scale
+  that the README's Known limits already record, and it is not new to deferrals and manual
+  checks.

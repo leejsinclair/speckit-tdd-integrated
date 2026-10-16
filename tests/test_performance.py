@@ -21,10 +21,15 @@ from fixtures.make_features import (
     baseline,
     chain,
     checkpoint,
+    deferrals_table,
+    df,
     evidence,
     green,
     item_fp,
     item_tables,
+    manual_results_table,
+    manual_table,
+    mr,
     rec,
     red,
 )
@@ -41,8 +46,11 @@ HOOK_LIMIT = 1.0 * LIMIT_SCALE
 CHECK_LIMIT = 2.0 * LIMIT_SCALE
 
 
-def build_feature(root):
-    """A feature with OBLIGATIONS obligations, twice as many tasks and about RECORDS records."""
+def build_feature(root, unrecorded=0):
+    """A feature with OBLIGATIONS obligations, twice as many tasks and about RECORDS records.
+
+    The first ``unrecorded`` obligations have no records, for a caller that defers them.
+    """
     ids = [f"VO-{n:03d}" for n in range(1, OBLIGATIONS + 1)]
     spec = "# Feature Specification: Performance\n\n## Requirements\n\n### Functional Requirements\n\n"
     spec += "".join(f"- **FR-{n:03d}**: The system MUST do thing {n}.\n" for n in range(1, OBLIGATIONS + 1))
@@ -66,6 +74,8 @@ def build_feature(root):
         test_task, behaviour_task = f"T{2 * n - 1:03d}", f"T{2 * n:03d}"
         lines.append(f"- [X] {test_task} [US1] [{ident}] Write the failing test {n} in tests/test_{n}.py\n")
         lines.append(f"- [X] {behaviour_task} [US1] [{ident}] Implement behaviour {n} in src/b{n}.py\n")
+        if n <= unrecorded:
+            continue
         records.append(red(test_task, ident))
         records.append(green(behaviour_task, ident))
         for _ in range(extra):
@@ -210,6 +220,63 @@ class ChecklistPerformanceCase(PerformanceCase):
         self.assertLess(elapsed, HOOK_LIMIT, f"hook took {elapsed:.2f}s, limit {HOOK_LIMIT}s")
 
     def test_gate_all_reports_no_item_finding(self):
+        result = run_check(["gate", "--all"], self.root)
+        self.assertEqual(result.code, 0, result.out[:300])
+
+
+MANUAL_CHECKS = 50 * SCALE
+DEFERRALS = 50 * SCALE
+
+
+def build_deferral_feature(root):
+    """The same feature with DEFERRALS approved deferrals and MANUAL_CHECKS recorded manual checks."""
+    build_feature(root, unrecorded=DEFERRALS)
+    plan_path = os.path.join(root, FEATURE_REL, "plan.md")
+    with open(plan_path) as handle:
+        plan = handle.read()
+    rows = [
+        {
+            "ID": f"MV-{n:03d}",
+            "Covers": f"FR-{n:03d}",
+            "Steps": f"Open page {n}",
+            "Expected result": f"Page {n} is as designed",
+            "Why not automated": "Visual layout",
+        }
+        for n in range(1, MANUAL_CHECKS + 1)
+    ]
+    write(root, [FEATURE_REL, "plan.md"], plan.rstrip("\n") + "\n\n" + manual_table(rows))
+    deferrals = [
+        df(f"DF-{n:02d}", f"VO-{n:03d}", basis="other", needs="yes", approved="A Person")
+        for n in range(1, DEFERRALS + 1)
+    ]
+    results = [mr(f"MR-{n:02d}", f"MV-{n:03d}") for n in range(1, MANUAL_CHECKS + 1)]
+    evidence_path = os.path.join(root, FEATURE_REL, "tdd-evidence.md")
+    with open(evidence_path) as handle:
+        text = handle.read()
+    write(root, [FEATURE_REL, "tdd-evidence.md"], text + deferrals_table(deferrals) + manual_results_table(results))
+
+
+class DeferralPerformanceCase(PerformanceCase):
+    """The same limits for a feature with 50 deferrals and 50 manual checks (plan.md, Constitution Check IV)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix="tdd-perf-")
+        cls.addClassCleanup(shutil.rmtree, cls.root, True)
+        cls.record_count = build_deferral_feature(cls.root)
+        write(cls.root, [".specify", "feature.json"], json.dumps({"feature_directory": FEATURE_REL}))
+
+    def test_the_generated_feature_has_the_stated_size(self):
+        result = run_check(["status"], self.root)
+        self.assertEqual(result.code, 0, result.err)
+        self.assertIn(f"manual checks 0 open, {MANUAL_CHECKS} passed", result.out)
+        self.assertEqual(result.out.count(" deferred: "), DEFERRALS)
+
+    def test_plan_passes(self):
+        result = run_check(["plan"], self.root)
+        self.assertEqual((result.code, result.out), (0, "plan: passed\n"), result)
+
+    def test_gate_all_reports_no_finding(self):
         result = run_check(["gate", "--all"], self.root)
         self.assertEqual(result.code, 0, result.out[:300])
 
