@@ -382,3 +382,10 @@ to scenarios 3 to 6 and 8 and do not replace them.
 - **Plan**: the agent labelled the edge cases `EC-01` and `EC-02` in `spec.md` (additive), and `plan` and `tasks` passed. Specification of 3 requirements and 2 scenarios; 3 obligations and 3 items.
 - **Implementation went further**: baseline recorded, T001 to T004 gated and marked complete, with a valid Red run for VO-001 and VO-002 (`'USD' != '$'`) and a Green run.
 - **Where it stopped**: T005, VO-003 (FR-003 and EC-01, a symbol supplied explicitly stays in force). The library has no code path that accepts a symbol, so the test could only compare a literal with itself and passed on its first run; the script recorded the Red run as not valid and the agent, told not to work round a refusal, stopped with three options (add a small API, record an exception, drop or reword FR-003). This is the case the "unchanged by construction" rule describes; the plan stage had written an obligation for it instead of an exemption, so the rule was not applied. `compliance` printed `NON-COMPLIANT` (no checkpoint, VO-003 in progress), which is correct for unfinished work.
+
+### One-off rerun: story 07 with Sonnet at low effort, with the rule at the obligations step (`6e77476`)
+
+- **Result**: all five commands exited 0 and no gate or edit was refused. `plan`, `tasks`, `gate --all` pass for 4 completed tasks and `compliance` printed `COMPLIANT`.
+- **Size**: 3 requirements and 2 scenarios in the specification; **1 obligation** (VO-001, covering FR-001, FR-002, both scenarios, SC-001, SC-002 and EC-01); 3 behaviour items; two exemptions, FR-003 and EC-02, both with the reason "unchanged by construction: the change gives no way to vary it" and "Review of the diff" as the alternative. The earlier run of the same model and story had written an obligation for the same requirement and stopped at its Red run.
+- **Evidence**: a valid Red run (`'USD' != '$'`), a Green run, a checkpoint; the final report listed FR-003 and EC-02 as exempt and not verified by the tests.
+- **Limits of this result**: one run of one model at low effort. Haiku at the same story was not rerun with this wording.
