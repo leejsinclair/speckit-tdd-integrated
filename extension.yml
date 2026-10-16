@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: "integrated-tdd"
   name: "Integrated TDD"
-  version: "0.2.0"
+  version: "0.3.0"
   description: "Requirements-driven test-driven development inside the standard Spec Kit stages, with real test evidence and a hard stop on unverified tasks"
   category: "process"
   effect: "read-write"

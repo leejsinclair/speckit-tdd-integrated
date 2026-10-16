@@ -30,11 +30,11 @@ text in its output.
 ## Install
 
 Install the extension first, then the preset, from a release archive. The address below
-is that of the `v0.2.0` tag, which exists once the release is published:
+is that of the `v0.3.0` tag, which exists once the release is published:
 
 ```bash
-specify extension add integrated-tdd --from https://github.com/leejsinclair/speckit-tdd-integrated/archive/refs/tags/v0.2.0.zip
-specify preset add integrated-tdd --from https://github.com/leejsinclair/speckit-tdd-integrated/archive/refs/tags/v0.2.0.zip
+specify extension add integrated-tdd --from https://github.com/leejsinclair/speckit-tdd-integrated/archive/refs/tags/v0.3.0.zip
+specify preset add integrated-tdd --from https://github.com/leejsinclair/speckit-tdd-integrated/archive/refs/tags/v0.3.0.zip
 ```
 
 Install from a release archive, not from a working copy. A release archive holds only the
@@ -304,12 +304,12 @@ These are limits of the first release. None is presented as covered.
 
 ## Releasing
 
-Both manifests declare the version; the tag must match (`v0.2.0` for `0.2.0`). Pushing a tag
+Both manifests declare the version; the tag must match (`v0.3.0` for `0.3.0`). Pushing a tag
 runs `.github/workflows/release.yml`, which builds the zip and attaches it to a GitHub
 release. The same zip can be built locally from any tag, local or on GitHub:
 
 ```bash
-tools/release-zip.sh v0.2.0        # writes dist/speckit-tdd-integrated-0.2.0.zip
+tools/release-zip.sh v0.3.0        # writes dist/speckit-tdd-integrated-0.3.0.zip
 ```
 
 The script refuses a tag whose manifests declare another version. The zip holds only the
