@@ -68,9 +68,7 @@ class RuleTests(ComplianceCase):
         )
 
     def test_c5_completed_task_that_fails_its_gate(self):
-        self.assert_non_compliant(
-            "compliance-c5-fail", "C5 T012 #3: G9: command 'adhoc' is not declared in the plan"
-        )
+        self.assert_non_compliant("compliance-c5-fail", "C5 T012 #3: G9: command 'adhoc' is not declared in the plan")
 
     def test_c5_applies_every_gate_rule_to_completed_tasks(self):
         lines = self.assert_non_compliant("gate-all-fail", only=False)
@@ -165,6 +163,61 @@ class ComplianceBehaviourTests(ComplianceCase):
         result = self.check(["compliance"], root)
         self.assertEqual(result.code, 2)
         self.assertIn("spec.md", result.err)
+
+
+class NoToolingComplianceTests(ComplianceCase):
+    """No test tooling gives notices, never a failure (FR-020, EC-04, EC-06, SC-003)."""
+
+    NOTICES = [
+        "notice: no test tooling is recorded: nothing is verified by tests",
+        "notice: VO-001 deferred: no test tooling",
+        "notice: VO-002 deferred: no test tooling",
+    ]
+
+    def test_a_complete_feature_is_compliant_with_notices_and_exit_0(self):
+        result = self.compliance("no-tooling-complete")
+        self.assertEqual((result.code, result.err), (0, ""), result)
+        self.assertEqual(result.out.splitlines(), ["COMPLIANT"] + self.NOTICES)
+
+    def test_every_obligation_deferred_with_an_evidence_document_is_compliant_and_c7_holds(self):
+        result = self.compliance("no-tooling-all-deferred")
+        self.assertEqual((result.code, result.out.splitlines()), (0, ["COMPLIANT"] + self.NOTICES), result)
+
+    def test_json_carries_the_notices_and_the_verdict(self):
+        data = json.loads(self.compliance("no-tooling-complete", "--json").out)
+        self.assertEqual((data["verdict"], data["exit_code"], data["findings"]), ("COMPLIANT", 0, []))
+        self.assertEqual([f"notice: {text}" for text in data["notices"]], self.NOTICES)
+
+    def test_a_feature_with_a_command_has_no_notices_and_no_key(self):
+        self.assert_compliant("compliance-c1-pass")
+        self.assertNotIn("notices", json.loads(self.compliance("compliance-c1-pass", "--json").out))
+
+    def test_a_baseline_beside_the_none_row_is_c9(self):
+        result = self.compliance("no-tooling-with-runs")
+        self.assertEqual(result.code, 1, result)
+        self.assertEqual(
+            result.out.splitlines(),
+            [
+                "NON-COMPLIANT",
+                "C9 tdd-evidence.md: the plan records no test tooling but the evidence holds a baseline or runs",
+            ]
+            + self.NOTICES,
+        )
+
+    def test_a_declared_command_beside_the_none_row_is_c9_as_well_as_a_plan_finding(self):
+        lines = self.compliance("no-tooling-with-command").out.splitlines()
+        self.assertEqual(lines[0], "NON-COMPLIANT")
+        self.assertIn(
+            "PLAN None: the commands table records no test tooling and also declares a command: keep one", lines
+        )
+        self.assertIn("C9 plan.md: the plan records no test tooling and also declares a command", lines)
+
+    def test_compliance_writes_nothing(self):
+        for fixture in ("no-tooling-complete", "no-tooling-with-runs"):
+            root = self.repo(fixture)
+            before = snapshot(root)
+            self.check(["compliance"], root)
+            self.assertEqual(snapshot(root), before)
 
 
 class RuleC8Tests(ComplianceCase):

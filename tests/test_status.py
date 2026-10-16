@@ -260,6 +260,79 @@ class StatusBehaviourTests(StatusCase):
         self.assertEqual(summary_body(read(self.feature(root), "tdd-evidence.md")), self.check(["status"], root).out)
 
 
+class NoToolingStatusTests(StatusCase):
+    """While the plan records no test tooling every obligation is deferred for that reason (FR-006, FR-012)."""
+
+    EXPECTED = [
+        *HEADER,
+        f"| VO-001 | {REQS_1} | deferred | - | - |",
+        f"| VO-002 | {REQS_2} | deferred | - | - |",
+        "",
+        "No test tooling: nothing is verified by tests",
+        "",
+        "Not verified by tests",
+        "",
+        "- VO-001 deferred: no test tooling",
+        "- VO-002 deferred: no test tooling",
+        "",
+        "Counts: verified 0, deferred 2",
+        "",
+        not_verified((1, "deferred"), (2, "deferred")),
+        "",
+        NONE_LINE,
+        "",
+        NO_FAILURES,
+    ]
+
+    def test_the_view_states_the_no_tooling_state_the_reason_and_the_counts(self):
+        self.assert_view("no-tooling-complete", "\n".join(self.EXPECTED) + "\n")
+
+    def test_no_obligation_is_shown_as_verified(self):
+        out = self.status("no-tooling-complete").out
+        rows = [line for line in out.splitlines() if line.startswith("| VO-")]
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertIn("| deferred |", row)
+        self.assertNotIn("verified |", out)
+
+    def test_the_stored_summary_is_the_view(self):
+        root = self.repo("no-tooling-all-deferred")
+        self.assertEqual(summary_body(read(self.feature(root), "tdd-evidence.md")), self.check(["status"], root).out)
+
+    def test_json_carries_the_same_content(self):
+        data = json.loads(self.status("no-tooling-complete", "--json").out)
+        self.assertEqual((data["exit_code"], data["no_tooling"]), (0, True))
+        self.assertEqual([row["status"] for row in data["obligations"]], ["deferred", "deferred"])
+        self.assertEqual(
+            data["not_verified_by_tests"],
+            [
+                {"id": "VO-001", "state": "deferred", "reason": "no test tooling"},
+                {"id": "VO-002", "state": "deferred", "reason": "no test tooling"},
+            ],
+        )
+        self.assertEqual(data["counts"], {"verified": 0, "deferred": 2})
+
+    def test_a_plan_with_commands_has_none_of_the_added_lines_or_keys(self):
+        result = self.status("valid-minimal")
+        for words in ("No test tooling", "Not verified by tests", "Counts:"):
+            self.assertNotIn(words, result.out)
+        data = json.loads(self.status("valid-minimal", "--json").out)
+        for key in ("no_tooling", "not_verified_by_tests", "counts"):
+            self.assertNotIn(key, data)
+
+    def test_a_deferred_obligation_does_not_appear_as_open_work_on_a_feature_with_runs(self):
+        # The recorded baseline does not change the state: nothing is verified by tests.
+        out = self.status("no-tooling-with-runs").out
+        self.assertIn("Counts: verified 0, deferred 2", out.splitlines())
+
+    def test_status_writes_nothing(self):
+        root = self.repo("no-tooling-complete")
+        before = snapshot(root)
+        self.check(["status"], root)
+        self.check(["status", "--json"], root)
+        self.assertEqual(snapshot(root), before)
+
+
 class SummaryWriterTests(RunCase):
     """After any recording subcommand the Summary shows what status shows."""
 
@@ -470,9 +543,7 @@ class ItemViewTests(RepoCase):
 
     def test_an_item_with_obligations_and_an_exemption_is_judged_on_the_obligations(self):
         result = self.status("items-status-mixed-exemption")
-        self.assertIn(
-            "| BI-006 | - | VO-001, exemption FR-003 | verified | assert, pass |", result.out.splitlines()
-        )
+        self.assertIn("| BI-006 | - | VO-001, exemption FR-003 | verified | assert, pass |", result.out.splitlines())
 
     def test_no_item_is_verified_while_an_obligation_it_names_is_not(self):
         for case in ("items-status-partial", "items-status-failed", "items-status-blocked", "items-status-exempt"):
@@ -488,9 +559,7 @@ class ItemViewTests(RepoCase):
             "item-removed": "**Item changes**: BI-004 removed, not recorded.",
             "item-change-recorded": "**Item changes**: BX-01 on BI-002 (recorded).",
             "item-change-awaiting-approval": "**Item changes**: BX-01 on BI-002, alters behaviour (awaiting approval).",
-            "item-change-approved": (
-                "**Item changes**: BX-01 on BI-002, alters behaviour (approved by Lee Sinclair)."
-            ),
+            "item-change-approved": ("**Item changes**: BX-01 on BI-002, alters behaviour (approved by Lee Sinclair)."),
             "item-removal-recorded": "**Item changes**: BX-01 on BI-004, removed (recorded).",
             "item-id-reused": "**Item changes**: BX-01 on BI-004, removed (recorded); BI-004 id reused.",
         }

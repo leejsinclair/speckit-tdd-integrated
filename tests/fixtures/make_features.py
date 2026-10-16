@@ -2002,6 +2002,38 @@ def _no_tooling_checklist_changed():
     return as_no_tooling(_g11_requirement_added())
 
 
+# The Summary of a feature that records no test tooling, written out by hand (data-model.md, FR-006, FR-012).
+NO_TOOLING_SUMMARY = (
+    "_Generated from the tables below on 2026-10-10T14:00:00Z._\n\n"
+    "| Obligation | Requirements | Status | Tests | Latest result |\n"
+    "|------------|--------------|--------|-------|---------------|\n"
+    "| VO-001 | FR-001, US1-AS1 | deferred | - | - |\n"
+    "| VO-002 | FR-002, US1-AS2, SC-001, DC-01, EC-01 | deferred | - | - |\n\n"
+    "No test tooling: nothing is verified by tests\n\n"
+    "Not verified by tests\n\n"
+    "- VO-001 deferred: no test tooling\n"
+    "- VO-002 deferred: no test tooling\n\n"
+    "Counts: verified 0, deferred 2\n\n"
+    "**Not verified**: FR-001 (VO-001 deferred), US1-AS1 (VO-001 deferred), FR-002 (VO-002 deferred), "
+    "US1-AS2 (VO-002 deferred), SC-001 (VO-002 deferred), DC-01 (VO-002 deferred), EC-01 (VO-002 deferred), "
+    "FR-003 (exempt: see plan).\n\n"
+    "**Open decisions**: none. **Exceptions**: none. **Expectation changes**: none.\n\n"
+    "**Pre-existing failures**: none.\n"
+)
+
+
+@case("no-tooling-all-deferred")
+def _no_tooling_all_deferred():
+    # Every task complete, an evidence document with no records, and the Summary the view regenerates.
+    return no_tooling(tasks=EVERY_TASK, evidence=evidence([], summary=NO_TOOLING_SUMMARY))
+
+
+@case("no-tooling-with-runs")
+def _no_tooling_with_runs():
+    # A baseline was recorded, and the plan was then changed to record no test tooling (EC-04).
+    return no_tooling(tasks=EVERY_TASK, evidence=evidence([baseline()], summary=NO_TOOLING_SUMMARY))
+
+
 # ---------------------------------------------------------------------------
 
 
