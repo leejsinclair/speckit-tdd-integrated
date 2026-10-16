@@ -1739,7 +1739,40 @@ def check_plan(spec, plan):
         problem = requirement_problem(exemption.requirement, spec)
         if problem:
             findings.append(Finding("PLAN", exemption.requirement, f"exempted requirement {problem}"))
+    findings.extend(rule_m1_m2(spec, plan))
     findings.extend(rule_c1(spec, plan))
+    return findings
+
+
+MANUAL_ID = re.compile(r"^MV-\d{3,}$")
+
+
+def rule_m1_m2(spec, plan):
+    """Each manual check is complete and has a unique id (M1), and covers things the feature holds (M2)."""
+    findings = []
+    seen = set()
+    obligations = {obligation.id for obligation in plan.obligations}
+    for check in plan.manual_checks:
+        if not MANUAL_ID.match(check.id):
+            findings.append(Finding("M1", check.id, "manual check id must be MV- and three or more digits"))
+        if check.id in seen:
+            findings.append(Finding("M1", check.id, "manual check id is used more than once"))
+        seen.add(check.id)
+        for name, value in (
+            ("covers", check.covers),
+            ("steps", check.steps),
+            ("expected result", check.expected),
+            ("why not automated", check.why),
+        ):
+            if not value:
+                findings.append(Finding("M1", check.id, f"{name} is empty"))
+        for ident in check.covers:
+            if OBLIGATION_ID.match(ident):
+                problem = None if ident in obligations else "is not in the plan"
+            else:
+                problem = requirement_problem(ident, spec)
+            if problem:
+                findings.append(Finding("M2", check.id, f"covers {ident} {problem}"))
     return findings
 
 
