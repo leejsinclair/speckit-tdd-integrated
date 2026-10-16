@@ -164,7 +164,7 @@ A developer reading the documentation can tell when test-first development and t
 - **SC-003**: A feature with deferred obligations and open manual checks completes every task, and compliance exits with no failure caused by them.
 - **SC-004**: Declaring a test command in a feature that recorded no test tooling brings the baseline and gates into effect, in 100% of seeded cases.
 - **SC-005**: A reader who has not seen this feature answers the three questions of User Story 4 correctly from the documentation alone; one reader answering all three correctly meets it.
-- **SC-006**: The existing test suite passes unchanged except where a test asserted the behaviour this feature replaces.
+- **SC-006**: Every existing test passes without being edited. If one fails, work stops and the failure goes to the maintainer.
 
 ## Assumptions
 
