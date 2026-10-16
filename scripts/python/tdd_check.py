@@ -2178,8 +2178,45 @@ def view_lines(view):
     ]
 
 
+def scenarios_view(checklist):
+    """The checklist as a reviewer reads it: each scenario's quote above its items, then Other behaviours."""
+    blocks = []
+    data = []
+    for section in checklist.sections:
+        lines = [section.heading]
+        lines.extend("  > " + line for line in section.quote.splitlines())
+        entries = []
+        for item in section.items:
+            lines.append(
+                f"  {item.id} | Expresses: {', '.join(item.expresses)} | Verified by: {', '.join(item.verified_by)}"
+            )
+            lines.extend(f"    {keyword} {words}" for keyword, words in item.clauses)
+            entries.append(
+                {
+                    "id": item.id,
+                    "expresses": item.expresses,
+                    "verified_by": item.verified_by,
+                    "clauses": [list(clause) for clause in item.clauses],
+                }
+            )
+        blocks.append(lines)
+        data.append({"heading": section.heading, "quote": section.quote, "items": entries})
+    out = []
+    for number, lines in enumerate(blocks):
+        if number:
+            out.append("")
+        out.extend(lines)
+    return out, data
+
+
 def cmd_status(args, root, feature_dir):
     """Print the Review Evidence view. Exit 0 whenever the artefacts can be read."""
+    if args.scenarios and checklist_applies(feature_dir):
+        text = read_checklist(feature_dir)
+        if text is None:
+            raise UsageError(f"cannot read {CHECKLIST_REL}: the file does not exist or cannot be read")
+        lines, data = scenarios_view(parse_checklist(text))
+        return EXIT_OK, [], lines, {"scenarios": data}
     plan = require_plan(feature_dir)
     evidence = open_ledger(feature_dir)
     tasks = parse_tasks(read_text(os.path.join(feature_dir, TASKS_FILE)) or "")
@@ -2550,7 +2587,10 @@ def build_parser():
     which.add_argument("--task", help="the task about to be marked complete")
     which.add_argument("--all", action="store_true", help="every task marked complete")
 
-    subs.add_parser("status", parents=[common], help="print the Review Evidence view")
+    status = subs.add_parser("status", parents=[common], help="print the Review Evidence view")
+    status.add_argument(
+        "--scenarios", action="store_true", help="print each scenario's quote beside the behaviour items that refine it"
+    )
     subs.add_parser("compliance", parents=[common], help="apply rules C1 to C7 to a finished feature")
 
     run = subs.add_parser("run", parents=[common], help="run a declared command and record the outcome")
