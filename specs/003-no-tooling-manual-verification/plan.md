@@ -183,8 +183,9 @@ single-file check script. The new behaviour is added to the script's existing se
 | Two new subcommands of the check script, `defer` and `manual` (Principle I, as 002 read it) | A deferral and a manual result must be recorded in a chained table, which only the script can write without breaking the chain. A person records a manual result by running `manual` or by asking the agent to | Reusing `exception` for deferral would put it in a table that is not chained, which FR-008 forbids. Reusing `decision` has the wrong meaning. Asking people to edit the evidence document breaks its protection |
 | Two new evidence tables, `## Deferrals` and `## Manual results` (Principle I) | The records table cannot carry them: a deferral is not a run and a manual result has a person but no command. Each needs its own chain | Adding phases `defer` and `manual` to Test Execution Records would give them a Result column of `pass` or `fail` and put them in the path of G4 and G6, which would then need special cases in every rule that reads the records |
 
-**Approval requested** (constitution, Governance: a departure is acceptable only when
-recorded with a justification and approved by a person). Awaiting approval:
+**Approved by Lee Sinclair on 2026-10-17** (constitution, Governance: a departure is
+acceptable only when recorded with a justification and approved by a person). All five
+items approved in the conversation:
 
 1. The two new subcommands `defer` and `manual` (Principle I).
 2. The two new evidence tables (Principle I).
