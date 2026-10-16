@@ -1954,6 +1954,39 @@ def _parse_manual_results_wrong_header():
 
 
 # ---------------------------------------------------------------------------
+# No test tooling, User Story 1 (T007, T009, T011)
+# ---------------------------------------------------------------------------
+
+
+def as_no_tooling(files, evidence_kept=False):
+    """The same feature with its commands table replaced by the ``None`` row, and no evidence unless kept."""
+    files = dict(files)
+    files["plan.md"] = swap(files["plan.md"], COMMAND_ROWS, NO_TOOLING_ROW)
+    if not evidence_kept:
+        files.pop("tdd-evidence.md", None)
+    return files
+
+
+CASES["no-tooling-valid"] = no_tooling
+
+
+@case("no-tooling-with-command")
+def _no_tooling_with_command():
+    return variant(plan=swap(PLAN, COMMAND_ROWS, NO_TOOLING_ROW + COMMAND_ROWS))
+
+
+@case("no-tooling-bad-checklist")
+def _no_tooling_bad_checklist():
+    item = with_item(CL_ITEM_1, expresses=["FR-001", "FR-099", "US1-AS1"])
+    return as_no_tooling(cl_case(sections=cl_sections(items1=[item])))
+
+
+@case("no-tooling-empty-table")
+def _no_tooling_empty_table():
+    return variant(plan=swap(PLAN, COMMAND_ROWS, ""), evidence=None)
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):

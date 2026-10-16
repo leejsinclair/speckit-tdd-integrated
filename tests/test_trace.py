@@ -252,5 +252,80 @@ class TasksCheckTests(TraceCase):
             self.assertEqual(snapshot(root), before)
 
 
+class NoToolingPlanTests(TraceCase):
+    """A commands table holding only the None row (research D1, FR-001, FR-005, FR-007, EC-02)."""
+
+    subcommand = "plan"
+
+    def test_a_plan_recording_no_test_tooling_passes_and_says_so(self):
+        _root, result = self.run_on("no-tooling-valid")
+        self.assertEqual((result.code, result.out, result.err), (0, "plan: passed (no test tooling recorded)\n", ""))
+
+    def test_the_json_result_says_so_too(self):
+        _root, result = self.run_on("no-tooling-valid", ["--json"])
+        data = json.loads(result.out)
+        self.assertEqual((data["exit_code"], data["findings"], data["no_tooling"]), (0, [], True))
+
+    def test_the_json_result_of_a_plan_with_commands_is_unchanged(self):
+        _root, result = self.run_on("valid-minimal", ["--json"])
+        self.assertNotIn("no_tooling", json.loads(result.out))
+
+    def test_none_beside_a_command_is_one_finding_on_the_commands_table(self):
+        self.assert_only_finding(
+            "no-tooling-with-command",
+            "PLAN None: the commands table records no test tooling and also declares a command: keep one",
+        )
+
+    def test_an_empty_commands_table_without_a_none_row_is_still_a_finding(self):
+        self.assert_only_finding(
+            "no-tooling-empty-table", "PLAN plan.md: no verification command is declared: a gap to resolve in planning"
+        )
+
+    def test_a_failing_plan_does_not_print_the_added_words(self):
+        lines = self.assert_fails_with("no-tooling-bad-checklist")
+        self.assertEqual(lines[0], "plan: failed, 1 finding")
+
+    def test_the_checklist_rules_still_apply(self):
+        lines = self.assert_fails_with("no-tooling-bad-checklist")
+        self.assertTrue(any(line.startswith("B6 BI-001: Expresses FR-099") for line in lines), lines)
+
+    def test_the_other_plan_rules_still_apply(self):
+        root = self.repo("no-tooling-valid")
+        plan = read(self.feature(root), "plan.md").replace("| VO-001 | FR-001, US1-AS1 |", "| VO-001 | - |")
+        write(self.feature(root), ["plan.md"], plan)
+        result = self.check(["plan"], root)
+        self.assertEqual(result.code, 1)
+        self.assertIn("PLAN VO-001: names no requirement", result.out)
+
+    def test_a_lowercase_none_command_id_is_still_a_command(self):
+        root = self.repo("valid-minimal")
+        plan = read(self.feature(root), "plan.md").replace("| unit | `sh", "| none | `sh")
+        write(self.feature(root), ["plan.md"], plan)
+        result = self.check(["plan"], root)
+        self.assertEqual((result.code, result.out), (0, PLAN_PASSED))
+
+    def test_plan_with_the_none_row_creates_or_changes_no_file(self):
+        root = self.repo("no-tooling-valid")
+        before = snapshot(root)
+        self.check(["plan"], root)
+        self.assertEqual(snapshot(root), before)
+
+
+class NoToolingTasksTests(TraceCase):
+    subcommand = "tasks"
+
+    def test_tasks_pass_for_a_plan_recording_no_test_tooling(self):
+        _root, result = self.run_on("no-tooling-valid")
+        self.assertEqual((result.code, result.out, result.err), (0, TASKS_PASSED, ""))
+
+    def test_the_task_rules_still_apply(self):
+        root = self.repo("no-tooling-valid")
+        tasks = read(self.feature(root), "tasks.md").replace("[NT: README wording only] ", "")
+        write(self.feature(root), ["tasks.md"], tasks)
+        result = self.check(["tasks"], root)
+        self.assertEqual(result.code, 1)
+        self.assertIn("G1 T015: no [VO-nnn] or [NT: reason] label", result.out)
+
+
 if __name__ == "__main__":
     unittest.main()
