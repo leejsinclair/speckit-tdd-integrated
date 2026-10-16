@@ -147,6 +147,33 @@ checklist holds every task (G11). `compliance` reports both (C8).
 checklist, and `tdd-evidence.md` at the top of the feature directory for a feature whose
 evidence was started with 0.1.0. A feature never holds both.
 
+## Compared with spec-kit-bdd
+
+[spec-kit-bdd](https://github.com/RSginer/spec-kit-bdd) is a community extension that also
+brings behaviour-driven development to Spec Kit. The two take different approaches.
+
+- **What a behaviour is.** spec-kit-bdd writes executable Gherkin: `.feature` files, and
+  step-definition stubs that fail until the code exists, for a BDD tool to run. Here a
+  behaviour is a checked statement in the specification's own terms. Nothing runs the
+  checklist: an ordinary test verifies each item, and the evidence records that test failing
+  and then passing. This is a behaviour specification that is traced and checked, not
+  acceptance automation.
+- **How it is used.** spec-kit-bdd adds three commands and two optional hooks. This preset
+  adds no command: the checklist is written by `/speckit-plan` and checked by the existing
+  stages.
+- **How it is checked.** spec-kit-bdd's traceability matrix and coverage percentage are
+  produced by the model. Here rules B1 to B7 and gates G10 and G11 are a script that gives
+  the same answer every run, and the hook stops the stage when they fail.
+- **Where it lives.** spec-kit-bdd writes to a project-wide `features/` folder. Here each
+  feature keeps its checklist in its own directory.
+- **What it has that this does not.** Scenarios a BDD tool can run, wording suited to the
+  kind of project (API, command line, library or interface), and step stubs for several
+  languages.
+
+Using both on one feature would give two lists of the same scenarios. If you need
+executable Gherkin, treat it as the test that verifies an obligation, and keep one list of
+behaviours.
+
 ## Observable criteria for successful operation
 
 Each of these can be checked from a feature's artefacts, without reading its code. The
