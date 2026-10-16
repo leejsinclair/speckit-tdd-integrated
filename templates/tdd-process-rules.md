@@ -163,8 +163,27 @@ remains. The check does not decide whether an item keeps its scenario's wording 
 enough, whether two items describe one behaviour, or whether an item adds behaviour; those
 are for the plan stage to get right and for the reviewer to judge.
 
-**Review.** The plan stage ends by naming the checklist's location and asking for it to be
-reviewed against the specification. No approval is requested and nothing waits for one.
+### Reviewing the checklist
+
+A person can judge the checklist from the specification and the checklist alone, before any
+code is written, without the plan or the task list.
+
+- **What the reviewer compares.** The reviewer compares each scenario's quote against its
+  items: every outcome the scenario states appears in the items, none weaker. Whether every requirement is named
+  by an item, and whether nothing goes beyond the specification: no item states a behaviour
+  the specification does not.
+- **The side-by-side view.** `python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py status --scenarios`
+  prints each scenario's quote with the items that refine it, each item with the
+  requirements it expresses and the obligations that verify it, and then the Other
+  behaviours. It needs no evidence and changes no file.
+- **Corrections go through the specification first.** When the reviewer finds the
+  checklist wrong because the specification or the Verification Plan is wrong, a correction
+  is made in `spec.md` or the Verification Plan first and then carried into the checklist,
+  so that the quotes and the obligations it names stay in line. A correction to the
+  checklist alone, to an item's wording, is made in the checklist.
+- **Review is asked for and never awaited.** The plan stage asks for review and waits for
+  no approval: the plan is reported complete when the check passes, and a correction found
+  later follows the route above.
 
 ## The Red, Green, Refactor cycle
 

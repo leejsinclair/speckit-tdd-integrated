@@ -92,5 +92,7 @@ replace the example rows. Follow the "Verification intent" rules in the process 
 In the Completion Report, state the number of obligations and exemptions, the verification
 commands found and where they came from, the location of the behaviour checklist
 (`tests/behaviour-checklist.md`) with the number of sections and items, and the result of
-the check. Ask for the checklist to be reviewed against the specification. No approval is
-requested and nothing waits for one: report the plan complete when the check passes.
+the check. Ask for the checklist to be reviewed against the specification, and name
+`tdd_check.py status --scenarios` as the way to read each scenario's quote beside its
+items. No approval is requested and nothing waits for one: report the plan complete when
+the check passes.
