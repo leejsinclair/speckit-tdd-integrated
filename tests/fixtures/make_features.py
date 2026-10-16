@@ -1876,6 +1876,84 @@ def _compliance_c7_item_stale():
 
 
 # ---------------------------------------------------------------------------
+# 003 parser cases (T005): the None row, Manual verification, Deferrals, Manual results
+# ---------------------------------------------------------------------------
+
+ENV_FAILURE = rec(
+    "T013", "VO-002", "red", "unit", "assert", "fail", "yes", "environment", "tests/test_cart.py", FP_B,
+    "expected: AssertionError",
+)  # fmt: skip
+
+
+@case("parse-no-tooling")
+def _parse_no_tooling():
+    return no_tooling()
+
+
+@case("parse-no-tooling-with-command")
+def _parse_no_tooling_with_command():
+    first = COMMAND_ROWS.splitlines(keepends=True)[0]
+    return variant(plan=swap(PLAN, first, NO_TOOLING_ROW + first))
+
+
+@case("parse-manual-valid")
+def _parse_manual_valid():
+    rows = [
+        mv("MV-001"),
+        mv("MV-002", covers="VO-001, US1-AS1", steps="Total an empty cart by hand", expected="The total reads 0"),
+    ]
+    return with_manual(rows)
+
+
+@case("parse-manual-none")
+def _parse_manual_none():
+    return with_manual([])
+
+
+@case("parse-manual-wrong-header")
+def _parse_manual_wrong_header():
+    files = with_manual()
+    files["plan.md"] = swap(files["plan.md"], "| ID | Covers | Steps |", "| ID | Covers | Procedure |")
+    return files
+
+
+def evidence_with_new_tables(deferrals=None, results=None):
+    deferrals = deferrals or [
+        df("DF-01", "VO-002", reason="needs queue", basis="environment failure #4"),
+        df("DF-02", "VO-001", reason="too slow", basis="other", needs="yes", approved="A Person", time=stamp(42)),
+    ]
+    results = results or [
+        mr("MR-01", "MV-001", result="fail", note="the header overlaps"),
+        mr("MR-02", "MV-001", result="pass", note="fixed", time=stamp(43)),
+    ]
+    text = evidence(VALID_RECORDS + [ENV_FAILURE], summary=EXAMPLE_SUMMARY)
+    return text + deferrals_table(deferrals) + manual_results_table(results)
+
+
+@case("parse-deferrals-valid")
+def _parse_deferrals_valid():
+    files = with_manual()
+    files["tdd-evidence.md"] = evidence_with_new_tables()
+    return files
+
+
+@case("parse-deferrals-wrong-header")
+def _parse_deferrals_wrong_header():
+    files = _parse_deferrals_valid()
+    files["tdd-evidence.md"] = swap(
+        files["tdd-evidence.md"], "| Basis | Needs approval |", "| Because | Needs approval |"
+    )
+    return files
+
+
+@case("parse-manual-results-wrong-header")
+def _parse_manual_results_wrong_header():
+    files = _parse_deferrals_valid()
+    files["tdd-evidence.md"] = swap(files["tdd-evidence.md"], "| Recorded by | Note |", "| Signed | Note |")
+    return files
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):

@@ -498,3 +498,268 @@ class ItemEvidenceTests(unittest.TestCase):
         evidence = parse("parse_evidence", "valid-minimal", "tdd-evidence.md")
         self.assertEqual(reasons(evidence.findings), [])
         self.assertEqual((evidence.item_baseline, evidence.item_changes), ([], []))
+
+
+# ---------------------------------------------------------------------------
+# 003: no test tooling, manual verification, deferrals and manual results
+# (data-model.md, research D1, D6, D7, D10)
+# ---------------------------------------------------------------------------
+
+
+def plan_of(case):
+    return parse("parse_plan", case, "plan.md")
+
+
+def evidence_of(case):
+    return parse("parse_evidence", case, "tdd-evidence.md")
+
+
+class NoToolingParseTests(unittest.TestCase):
+    def test_a_commands_table_holding_only_none_sets_no_tooling_and_no_command(self):
+        plan = plan_of("parse-no-tooling")
+        self.assertEqual(reasons(plan.findings), [])
+        self.assertTrue(plan.no_tooling)
+        self.assertEqual(plan.commands, [])
+
+    def test_none_beside_a_command_is_read_as_both_so_a_rule_can_report_it(self):
+        plan = plan_of("parse-no-tooling-with-command")
+        self.assertTrue(plan.no_tooling)
+        self.assertEqual([command.id for command in plan.commands], ["unit", "suite"])
+
+    def test_a_plan_with_commands_is_not_no_tooling(self):
+        self.assertFalse(plan_of("valid-minimal").no_tooling)
+
+    def test_an_empty_commands_table_is_not_no_tooling(self):
+        text = fixture_text("valid-minimal", "plan.md")
+        for row in (
+            "| unit | `sh tests/fixtures/bin/fake_test.sh {select}` | focused | tests/fixtures/bin |\n",
+            "| suite | `sh tests/fixtures/bin/fake_test.sh pass` | broad | tests/fixtures/bin |\n",
+        ):
+            text = text.replace(row, "")
+        plan = parser_function("parse_plan")(text)
+        self.assertFalse(plan.no_tooling)
+        self.assertEqual(plan.commands, [])
+
+    def test_a_lowercase_none_is_still_a_command_id(self):
+        text = fixture_text("valid-minimal", "plan.md").replace("| unit |", "| none |")
+        plan = parser_function("parse_plan")(text)
+        self.assertFalse(plan.no_tooling)
+        self.assertEqual([command.id for command in plan.commands], ["none", "suite"])
+
+
+class ManualVerificationParseTests(unittest.TestCase):
+    def test_a_plan_without_the_sub_heading_reads_as_no_manual_checks_and_no_finding(self):
+        plan = plan_of("valid-minimal")
+        self.assertEqual(plan.manual_checks, [])
+        self.assertEqual(reasons(plan.findings), [])
+
+    def test_a_well_formed_table_is_read_into_its_rows(self):
+        plan = plan_of("parse-manual-valid")
+        self.assertEqual(reasons(plan.findings), [])
+        self.assertEqual([check.id for check in plan.manual_checks], ["MV-001", "MV-002"])
+        second = plan.manual_checks[1]
+        self.assertEqual(second.covers, ["VO-001", "US1-AS1"])
+        self.assertEqual(second.steps, "Total an empty cart by hand")
+        self.assertEqual(second.expected, "The total reads 0")
+        self.assertEqual(second.why, "Visual layout has no stable automated check")
+
+    def test_a_single_none_row_means_no_manual_checks(self):
+        plan = plan_of("parse-manual-none")
+        self.assertEqual(reasons(plan.findings), [])
+        self.assertEqual(plan.manual_checks, [])
+
+    def test_a_wrong_header_gives_one_finding_naming_the_heading(self):
+        plan = plan_of("parse-manual-wrong-header")
+        found = reasons(plan.findings)
+        self.assertEqual(len(found), 1)
+        self.assertIn("### Manual verification", found[0])
+        self.assertTrue(found[0].startswith("PLAN "))
+        self.assertEqual(plan.manual_checks, [])
+
+    def test_the_exemptions_and_obligations_are_read_as_before(self):
+        plan = plan_of("parse-manual-valid")
+        self.assertEqual([item.id for item in plan.obligations], ["VO-001", "VO-002"])
+        self.assertEqual([item.requirement for item in plan.exemptions], ["FR-003"])
+
+
+def chain_breaks(function_name, evidence):
+    return parser_function(function_name)(evidence)
+
+
+class NewEvidenceTablesParseTests(unittest.TestCase):
+    def test_absent_tables_read_as_empty_without_a_finding(self):
+        evidence = evidence_of("valid-minimal")
+        self.assertEqual(reasons(evidence.findings), [])
+        self.assertEqual((evidence.deferrals, evidence.manual_results), ([], []))
+
+    def test_deferral_rows_are_read(self):
+        evidence = evidence_of("parse-deferrals-valid")
+        self.assertEqual(reasons(evidence.findings), [])
+        first, second = evidence.deferrals
+        self.assertEqual((first.id, first.obligations, first.reason), ("DF-01", ["VO-002"], "needs queue"))
+        self.assertEqual(first.basis, "environment failure #4")
+        self.assertFalse(first.needs_approval)
+        self.assertEqual(first.approved_by, "")
+        self.assertEqual(len(first.check), 6)
+        self.assertEqual((second.basis, second.needs_approval, second.approved_by), ("other", True, "A Person"))
+
+    def test_manual_result_rows_are_read(self):
+        evidence = evidence_of("parse-deferrals-valid")
+        first, second = evidence.manual_results
+        self.assertEqual(
+            (first.id, first.check, first.result, first.recorded_by), ("MR-01", "MV-001", "fail", "A Person")
+        )
+        self.assertEqual(first.note, "the header overlaps")
+        self.assertEqual(len(first.check_value), 6)
+        self.assertEqual((second.result, second.note), ("pass", "fixed"))
+
+    def test_a_wrong_header_is_a_finding_naming_the_heading(self):
+        deferrals = reasons(evidence_of("parse-deferrals-wrong-header").findings)
+        self.assertEqual(len(deferrals), 1)
+        self.assertIn("## Deferrals", deferrals[0])
+        results = reasons(evidence_of("parse-manual-results-wrong-header").findings)
+        self.assertEqual(len(results), 1)
+        self.assertIn("## Manual results", results[0])
+
+    def test_a_result_other_than_pass_or_fail_is_a_finding(self):
+        text = fixture_text("parse-deferrals-valid", "tdd-evidence.md").replace(
+            "| MV-001 | fail |", "| MV-001 | maybe |"
+        )
+        found = "\n".join(reasons(parser_function("parse_evidence")(text).findings))
+        self.assertIn("result 'maybe' is not one of pass, fail", found)
+
+    def test_a_needs_approval_other_than_yes_or_no_is_a_finding(self):
+        text = fixture_text("parse-deferrals-valid", "tdd-evidence.md").replace(
+            "| other | yes |", "| other | perhaps |"
+        )
+        found = "\n".join(reasons(parser_function("parse_evidence")(text).findings))
+        self.assertIn("Needs approval 'perhaps' is not one of yes, no", found)
+
+    def test_the_other_evidence_tables_are_read_as_before(self):
+        evidence = evidence_of("parse-deferrals-valid")
+        self.assertEqual([record.seq for record in evidence.records], [1, 2, 3, 4])
+        self.assertEqual(evidence.records[3].classification, "environment")
+
+
+class NewChainTests(unittest.TestCase):
+    """Each new table has a chain of its own (data-model.md, Rules on the chain)."""
+
+    TEXT = fixture_text("parse-deferrals-valid", "tdd-evidence.md")
+
+    def parsed(self, text):
+        return parser_function("parse_evidence")(text)
+
+    def deferral_breaks(self, text):
+        return parser_function("deferral_chain_breaks")(self.parsed(text))
+
+    def result_breaks(self, text):
+        return parser_function("manual_result_chain_breaks")(self.parsed(text))
+
+    def test_an_untouched_chain_verifies(self):
+        self.assertEqual(self.deferral_breaks(self.TEXT), [])
+        self.assertEqual(self.result_breaks(self.TEXT), [])
+
+    def test_the_first_row_is_chained_from_nothing_and_the_second_from_the_first(self):
+        # The expected values come from tests/fixtures/make_features.py, which computes them independently.
+        evidence = self.parsed(self.TEXT)
+        self.assertEqual([row.check for row in evidence.deferrals], ["9da6f5", "981e14"])
+        self.assertEqual([row.check_value for row in evidence.manual_results], ["f8407e", "b73e3a"])
+
+    def test_a_changed_chained_cell_of_a_deferral_fails_that_row_only(self):
+        for old, new in (
+            ("| needs queue |", "| needs a queue |"),
+            ("| VO-002 | needs queue |", "| VO-001 | needs queue |"),
+            ("| environment failure #4 |", "| environment failure #3 |"),
+            ("| 2026-10-10T13:40:00Z |", "| 2026-10-10T13:41:00Z |"),
+            ("| other | yes |", "| other | no |"),
+        ):
+            with self.subTest(change=old):
+                self.assertEqual(
+                    self.deferral_breaks(self.TEXT.replace(old, new)), ["DF-01" if "other" not in old else "DF-02"]
+                )
+
+    def test_approved_by_is_not_part_of_the_deferral_chain(self):
+        for approver in ("-", "Someone Else", "A Person"):
+            text = self.TEXT.replace("| yes | A Person |", f"| yes | {approver} |")
+            with self.subTest(approver=approver):
+                self.assertEqual(self.deferral_breaks(text), [])
+
+    def test_a_changed_chained_cell_of_a_manual_result_fails_that_row_only(self):
+        for old, new in (
+            ("| MV-001 | fail |", "| MV-001 | pass |"),
+            ("| MV-001 | fail |", "| MV-002 | fail |"),
+            ("| A Person | the header overlaps |", "| Another | the header overlaps |"),
+            ("| 2026-10-10T13:41:00Z |", "| 2026-10-10T13:44:00Z |"),
+        ):
+            with self.subTest(change=new):
+                self.assertEqual(self.result_breaks(self.TEXT.replace(old, new)), ["MR-01"])
+
+    def test_note_is_not_part_of_the_manual_result_chain(self):
+        for note in ("-", "a different note"):
+            text = self.TEXT.replace("the header overlaps", note)
+            with self.subTest(note=note):
+                self.assertEqual(self.result_breaks(text), [])
+
+    def test_the_two_chains_are_independent_of_each_other_and_of_the_records(self):
+        text = self.TEXT.replace("| fail |", "| pass |", 1)
+        self.assertEqual(self.deferral_breaks(text), [])
+        text = self.TEXT.replace("| needs queue |", "| a change |")
+        self.assertEqual(self.result_breaks(text), [])
+
+    def test_a_row_inserted_or_removed_breaks_the_following_row(self):
+        lines = self.TEXT.splitlines(keepends=True)
+        without_first = "".join(line for line in lines if not line.startswith("| DF-01 "))
+        self.assertEqual(self.deferral_breaks(without_first), ["DF-02"])
+
+
+class RenderNewTablesTests(unittest.TestCase):
+    """The two tables are written back only when they hold rows (research D10)."""
+
+    NOW = "2026-10-10T14:00:00Z"
+
+    def render(self, case):
+        module = load_script()
+        folder = tempfile.mkdtemp(prefix="tdd-render-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        feature = os.path.join(folder, "feature")
+        shutil.copytree(os.path.join(FEATURES, case), feature)
+        evidence = module.load_evidence(feature)
+        return module, feature, module.render_evidence(feature, evidence, self.NOW)
+
+    def test_a_feature_with_neither_table_renders_without_either_heading(self):
+        _module, _feature, text = self.render("valid-minimal")
+        self.assertNotIn("## Deferrals", text)
+        self.assertNotIn("## Manual results", text)
+
+    def test_a_feature_with_rows_renders_both_tables_after_the_decisions(self):
+        _module, _feature, text = self.render("parse-deferrals-valid")
+        lines = text.splitlines()
+        positions = [lines.index(heading) for heading in ("## Decisions", "## Deferrals", "## Manual results")]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("| DF-02 | 2026-10-10T13:42:00Z | VO-001 | too slow | other | yes | A Person | 981e14 |", lines)
+        self.assertIn("| MR-02 | 2026-10-10T13:43:00Z | MV-001 | pass | A Person | fixed | b73e3a |", lines)
+
+    def test_rendering_and_reading_again_changes_nothing(self):
+        module, _feature, text = self.render("parse-deferrals-valid")
+        again = module.parse_evidence(text)
+        self.assertEqual(reasons(again.findings), [])
+        self.assertEqual(
+            [row.cells for row in again.deferrals],
+            [row.cells for row in evidence_of("parse-deferrals-valid").deferrals],
+        )
+        self.assertEqual(
+            [row.cells for row in again.manual_results],
+            [row.cells for row in evidence_of("parse-deferrals-valid").manual_results],
+        )
+
+    def test_a_feature_with_checklist_tables_puts_the_new_tables_after_them(self):
+        module, feature, _text = self.render("items-baseline")
+        evidence = module.load_evidence(feature)
+        self.assertEqual((evidence.deferrals, evidence.manual_results), ([], []))
+        cells = {
+            "ID": "DF-01", "Time": "2026-10-10T13:40:00Z", "Obligations": "VO-002", "Reason": "needs queue",
+            "Basis": "other", "Needs approval": "yes", "Approved by": "-", "Check": "abc123",
+        }  # fmt: skip
+        evidence.deferrals = [module.Item(cells=cells, id="DF-01", obligations=["VO-002"])]
+        rendered = module.render_evidence(feature, evidence, self.NOW).splitlines()
+        self.assertLess(rendered.index("## Behaviour item changes"), rendered.index("## Deferrals"))
