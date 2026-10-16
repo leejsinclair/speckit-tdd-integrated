@@ -135,6 +135,47 @@ not weaken it to pass.
    Until then the task stays incomplete (G8). Continue with tasks that do not depend on
    it.
 
+### A behaviour item changed after the baseline
+
+Behaviour items are fixed at the first recorded run. When `gate` reports **G10** for a
+task, an item that the task's obligations verify has been changed or removed since then,
+or its change awaits approval, or its id has been reused. Do not edit the item back and
+forth to clear the finding.
+
+1. Decide what the change is. A **correction** brings the item into line with the approved
+   specification. Otherwise it **alters intended behaviour**. A removed item is a change
+   too. An id is never reused: give a new behaviour a new id.
+2. Record it, naming the requirement it is justified against:
+
+   ```bash
+   python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py expectation --item <item id> \
+       --requirement <requirement id> --justification "<why>" [--alters-behaviour]
+   ```
+
+3. Where it alters intended behaviour, explain the change to the developer and ask for
+   approval. Record the approval only after the developer has given it in the
+   conversation, with the developer's name:
+
+   ```bash
+   python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py approve --id <BX-nn> --by "<name>"
+   ```
+
+   Until then the item's tasks stay incomplete (G10). Continue with tasks that do not
+   depend on it.
+
+Two other refusals come from the checklist:
+
+- **A Red run is refused for an obligation that no behaviour item names.** Return to the
+  checklist and add it to an existing or new item first: put it in an item's *Verified by*
+  list, or write a new item, in `tests/behaviour-checklist.md`, rerun `plan`, and then
+  record the run. Do this before the test is written.
+- **A G11 finding on any task** means the checklist no longer passes the checks `plan`
+  applies, for example because a requirement was added that no item names. Bring the
+  specification, the Verification Plan and the checklist back into line: correct the
+  specification or the Verification Plan first and then the checklist, rerun `plan`, and
+  record any change to a fixed item with `expectation --item`. No task can be marked
+  complete until `plan` passes again.
+
 ### Failures, exceptions and decisions
 
 Follow "Failures, exceptions and decisions" in the process rules. In this stage:
@@ -199,6 +240,8 @@ In the Completion Report, in addition to what the core command asks for:
 - List every blocked or failed item, every exception, every expectation change and every
   open decision, with the tasks held back. List any change made to an existing test file,
   with its reason.
+- List every behaviour item that is not verified, with the reason, from `status`, and every
+  change to a fixed behaviour item with its approval state.
 - State plainly that passing tests do not show that requirements listed as not verified
   are met.
 - State that passing tests do not stand in for linting, static analysis, security checks

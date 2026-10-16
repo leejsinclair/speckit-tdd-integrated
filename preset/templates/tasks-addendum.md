@@ -28,6 +28,8 @@ A task's kind follows from its labels and its position in this file:
 | `behaviour` | Any later task naming that obligation |
 
 - Test tasks are required for every task that delivers behaviour. They are not optional.
+- When the feature has a behaviour checklist, each obligation a test task names must be
+  named by a behaviour item, so that the test traces to a planned behaviour.
 - Every obligation needs a `test` task and at least one `behaviour` task, so it is named
   by at least two tasks.
 - The first task to name an obligation is its test task whatever its description says, so

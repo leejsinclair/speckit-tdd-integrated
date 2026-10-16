@@ -155,6 +155,27 @@ order of creation and never reused.
   question to the developer as under "Verification intent" and leave the item out until it
   is answered.
 
+**Fixed at the baseline, changed afterwards.** The items are fixed from the first recorded
+run: the check script records each item's content and the obligations it names, once,
+and refuses a baseline while the checklist fails. After that:
+
+- Adding an item for a discovered obligation is allowed, and the item comes before the
+  obligation's test: add the item (or add the obligation to an existing item's *Verified
+  by*), rerun `plan`, then write the test. A Red run for an obligation that no item names
+  is refused.
+- Linking an obligation to an existing item is not a change to the item.
+- Changing the wording of a fixed item, or removing one, is a change to what the feature
+  must show. Record it with `tdd_check.py expectation --item <item id> --requirement <id>
+  --justification "<why>"`, adding `--alters-behaviour` when it alters what the
+  specification asks. The tasks that verify the item are held until the change is recorded,
+  and approved when it alters behaviour: explain it to the developer, and record
+  `approve --id <BX-nn> --by "<name>"` only after the developer has approved in the
+  conversation.
+- An id is never reused. A removed item's id is not given to another behaviour.
+- While the checklist fails the checks the `plan` stage applies, no task can be marked
+  complete (the gate rule G11): it is brought back into line, through the specification or
+  the Verification Plan first.
+
 **Check.** The `plan` check covers the checklist: every requirement and scenario is named
 by an item, every item names obligations or exemptions that exist, every obligation is
 named by an item, the format holds, no item names a code element the design introduces,
@@ -397,15 +418,18 @@ python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py decision 
 A reviewer who took no part in the work must be able to say, for any requirement, whether
 it is verified, by which tests and with what result, from the feature's artefacts alone.
 
-- **The chain is requirement, obligation, task, test, record.** The plan's obligations name
-  the requirements they verify. Task labels name the obligations. Each recorded run names
-  its task, its obligations and the test it selected. Keep every link: use the obligation's
-  real id on the task and on the run.
+- **The chain is requirement, behaviour item, obligation, task, test, record.** The
+  checklist's behaviour items name the requirements and scenarios they express and the
+  obligations that verify them. The plan's obligations name the requirements they verify.
+  Task labels name the obligations. Each recorded run names its task, its obligations and
+  the test it selected. Keep every link: use the obligation's real id on the task and on
+  the run.
 - **A scenario discovered during implementation is added before its test is written.** Add
   it to the plan's obligations table with origin `discovered` and the requirements it
   verifies, give it the next unused `VO-` id, and add its test task and behaviour task to
-  `tasks.md` with that label. Then write the test. Never leave a test that traces to no
-  obligation (FR-016).
+  `tasks.md` with that label. Then link it to a behaviour item: an obligation is linked to
+  a behaviour item before its test is written. Then write the test. Never leave a test that
+  traces to no obligation, or an obligation that traces to no item (FR-016, FR-032).
 - **When a requirement, a design decision or the implementation changes**, update the
   obligations, tasks and tests it affects, and rerun the `plan` and `tasks` checks. A
   changed expectation in a test that has already had its Red run is recorded as the Test
