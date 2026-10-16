@@ -57,11 +57,20 @@ replace the example rows. Follow the "Verification intent" rules in the process 
    level for each. Number them `VO-001`, `VO-002`, ... and set Origin to `planned`. For a
    small, low-risk change write one obligation per requirement and per acceptance
    scenario, and no more: not one per assertion, and not for a property the specification
-   does not state.
+   does not state. Before writing an obligation, ask whether the change gives anything to
+   test. When a requirement or an edge case states that existing behaviour stays unchanged
+   and the change gives no way to vary it, write no obligation for it: a test would only
+   restate how the language works. Exempt it instead, as step 4 says, and do not put it to
+   the developer as an ambiguity; if the change does add a way to vary it, write an
+   obligation as usual.
 
 4. **Verification exemptions**: for a requirement that cannot sensibly be verified
    automatically, add a row with the reason and how it is verified instead. Write a single
-   `None` row when there are no exemptions.
+   `None` row when there are no exemptions. For a requirement or an edge case that states
+   that existing behaviour stays unchanged where the change gives no way to vary it, the
+   reason is "unchanged by construction: the change gives no way to vary it" and the
+   alternative is a review of the diff. Give it a behaviour item whose Verified by is that
+   exemption (step 5), and name it in the Completion Report so the developer can overrule it.
 
 5. **Behaviour checklist**: write `tests/behaviour-checklist.md` in FEATURE_DIR, after the
    three tables, following "Behaviour checklist" in the process rules. When `IMPL_PLAN`'s
