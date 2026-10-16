@@ -21,6 +21,13 @@ strategy: wrap
 >   name `__SPECKIT_COMMAND_PLAN__` as the way to bring the feature under the process,
 >   and then carry on as core Spec Kit would, without verification labels and without
 >   running the check. Do not describe the feature's work as verified.
+> - **If `plan.md` has a Verification Plan with no `### Behaviour checklist` sub-heading
+>   and the feature has no `tests/behaviour-checklist.md`**, the feature was planned before
+>   the behaviour checklist existed. State this gap now and again in the Completion
+>   Report, name `__SPECKIT_COMMAND_PLAN__` as the way to add the checklist, and carry on
+>   as before: generate and check the task list against the Verification Plan, with no
+>   checklist rule applied. Do not describe the feature's behaviour as covered by a
+>   checklist.
 > - **Otherwise** test tasks are not optional. This overrides the statement below that
 >   "Tests are OPTIONAL" and every instruction to generate test tasks only on request:
 >   every obligation in the Verification Plan gets a test task, placed before the task
@@ -60,7 +67,11 @@ or when `plan.md` has no Verification Plan, as the note at the top of this comma
 
    Each finding names a rule and a task or obligation: a task without a label (G1), a
    label naming an obligation the plan does not hold, an obligation without a test task
-   and a behaviour task (C2), or behaviour ordered before its test (C3). Correct
+   and a behaviour task (C2), behaviour ordered before its test (C3), or, when the
+   behaviour checklist applies, a test task whose obligations no behaviour item names
+   (B7) or a checklist that is missing (`CHECKLIST`). A B7 finding means a test task
+   traces to no item: correct the label if it is wrong, and otherwise return to
+   `__SPECKIT_COMMAND_PLAN__` to add the item. Correct
    `tasks.md` and run the check again until it exits 0. Do not report completion while it
    exits non-zero.
 
