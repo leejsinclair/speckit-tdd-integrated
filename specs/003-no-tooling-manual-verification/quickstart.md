@@ -146,3 +146,30 @@ checks, and applies the same two limits (2 s for a check, 1 s for the hook).
   written before this feature; the code added here is formatted. Existing tests are not edited
   (SC-006), so both are left for the maintainer.
 - `npx markdownlint-cli2`: `Summary: 0 issues in 0 files` (82 files).
+
+### T035. Scenarios 2 to 5 against the examples
+
+Each was run in a scratch copy of the example. The check script is called from this repository.
+
+- **2, no test tooling** (`examples/runs/no-tooling/`): `plan: passed (no test tooling
+  recorded)`, `tasks: passed`, `gate: passed, 5 completed tasks`, `status` prints "No test
+  tooling: nothing is verified by tests" with both obligations deferred, and `compliance`
+  prints `COMPLIANT` with three notices. Declaring a command in place of `None`: `plan:
+  passed`, then `run` refuses without a baseline and `gate --all` reports G3 and G4 again.
+  Keeping `None` beside a command: `PLAN None: the commands table records no test tooling
+  and also declares a command: keep one`. All as expected.
+- **3, a deferred obligation** (`examples/runs/deferred/`): `defer --vo VO-001 --reason "too
+  slow"` prints `deferred VO-001 as DF-03 (needs approval: other)`; `gate --task T011`
+  reports `G12 T011 DF-03: needs approval and has no approver`; after `approve --id DF-03
+  --by "A Person"` it passes. `compliance` prints `COMPLIANT` with the notices. One
+  difference from the scenario text: the quickstart's `approve DF-02` is written
+  `approve --id DF-02` in the real syntax, and a passing `green` run for `VO-002` leaves it
+  `deferred`, because the run has no valid failing-first record before it. It reads `verified`
+  only with a valid red and green pair.
+- **4, manual verification**: the open check reads `MV-001 manual: open` and `Counts: ...
+  manual checks 1 open`; after `manual ... --result pass` it reads `manual: pass by A Person`
+  and `1 passed`; after a `fail` result `compliance` still prints `COMPLIANT`. Breaking the
+  table gives `M1 MV-001: steps is empty` and `M2 MV-001: covers FR-999 is not in spec.md`.
+- **5, older features**: `plan`, `gate --all`, `status` and `compliance` on
+  `examples/runs/compliant/` all exit 0, and the compatibility tests compare the output with
+  the 0.2.0 golden file.

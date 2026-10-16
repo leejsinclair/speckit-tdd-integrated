@@ -187,7 +187,7 @@ and the process rules; the examples pass; story 09 completes every stage
 done test-first
 
 - [X] T034 Run the whole suite, `uvx ruff check . && uvx ruff format --check .` and `npx markdownlint-cli2`; run the suite again under Python 3.9; record the summary lines in `quickstart.md` Validation results
-- [ ] T035 Run quickstart scenarios 2 to 5 against the examples and fixtures and record each observed output against the expected one in `quickstart.md` Validation results
+- [X] T035 Run quickstart scenarios 2 to 5 against the examples and fixtures and record each observed output against the expected one in `quickstart.md` Validation results
 - [ ] T036 Run quickstart scenario 8: build a release tree with `git archive HEAD` into `<tmp>/release`, install both packages into `<tmp>/proj` with `specify extension add --dev` and `specify preset add --dev`, confirm the composed skills carry the new wrapper text, run scenario 2 there, then remove both (`--force` for the extension) and confirm core Spec Kit still works. Record it
 - [ ] T037 Run story 09 with Claude Code in an empty project, once with Haiku and once with Sonnet at low effort, record each command's outcome, whether a framework was chosen or installed, and the final report's wording in `quickstart.md` Validation results. If a model stops at a stage, record where and why; fix a wrapper only test-first
 - [ ] T038 Person step: give the README and `templates/tdd-process-rules.md` to a reader who has not seen this feature and ask the three questions of User Story 4; record the answers and whether each came from the text alone (SC-005). If the person declines, mark `[~] [SKIPPED: developer step, not done]`
