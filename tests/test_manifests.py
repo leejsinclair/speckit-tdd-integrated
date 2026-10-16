@@ -569,6 +569,37 @@ class FindingsFromTheHaikuRunsTests(unittest.TestCase):
         self.assertIn("in the Completion Report", section)
 
 
+class EdgeCaseLabelTests(unittest.TestCase):
+    """The plan wrapper says what to do when the specification's edge cases carry no ids."""
+
+    def step(self):
+        below = wrapper_parts("plan")[2]
+        start = below.index("**Edge case labels**")
+        return flat(below[start : below.index("**Material ambiguity**")])
+
+    def test_step_sits_between_the_obligation_steps_and_the_ambiguity_step(self):
+        below = wrapper_parts("plan")[2]
+        self.assertLess(below.index("**Verification exemptions**"), below.index("**Edge case labels**"))
+        self.assertLess(below.index("**Edge case labels**"), below.index("**Material ambiguity**"))
+
+    def test_it_labels_unnumbered_edge_cases_in_the_specification_without_changing_wording(self):
+        step = self.step()
+        self.assertIn("edge cases carry no ids", step)
+        self.assertIn("`EC-01`, `EC-02`", step)
+        self.assertIn("in FEATURE_SPEC", step)
+        self.assertIn("change no other word", step)
+
+    def test_it_says_to_report_the_labels_and_never_to_invent_an_id(self):
+        step = self.step()
+        self.assertIn("name the labels in the Completion Report", step)
+        self.assertIn("never name an `EC-` id that FEATURE_SPEC does not hold", step)
+
+    def test_the_rules_say_the_same(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("## Verification intent") : text.index("## Behaviour checklist")])
+        self.assertIn("edge cases carry no ids", section)
+
+
 GAP_PHRASE = "no `### Behaviour checklist` sub-heading"
 
 
