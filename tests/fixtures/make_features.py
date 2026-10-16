@@ -2194,6 +2194,48 @@ def _manual_valid():
     return with_manual([mv("MV-001", covers="FR-003"), mv("MV-002", covers="VO-001, US1-AS2")])
 
 
+# Manual checks recorded and reported (T019). A finished feature whose Summary is written out by hand.
+def manual_compliant(results, entries, counts):
+    block = "Not verified by tests\n\n" + "".join(f"- {entry}\n" for entry in entries) + f"\nCounts: {counts}\n\n"
+    summary_text = swap(COMPLIANT_SUMMARY, "**Not verified**:", block + "**Not verified**:")
+    text = evidence(BOTH_CYCLES, summary=summary_text)
+    if results:
+        text += manual_results_table(results)
+    return with_manual(tasks=EVERY_TASK, evidence=text)
+
+
+CASES["manual-open"] = lambda: manual_compliant(
+    [], ["MV-001 manual: open"], "verified 2, deferred 0, manual checks 1 open"
+)
+CASES["manual-pass"] = lambda: manual_compliant(
+    [mr("MR-01", "MV-001", "pass")],
+    ["MV-001 manual: pass by A Person"],
+    "verified 2, deferred 0, manual checks 0 open, 1 passed",
+)
+CASES["manual-fail"] = lambda: manual_compliant(
+    [mr("MR-01", "MV-001", "fail")],
+    ["MV-001 manual: fail by A Person"],
+    "verified 2, deferred 0, manual checks 0 open, 1 failed",
+)
+
+
+def manual_item_case(check="MV-001"):
+    item = bi(
+        "BI-003", ["FR-003"], [check],
+        [("Given", "the cart page is shown"), ("When", "the shopper looks at it"),
+         ("Then", "it follows the shop's visual layout")],
+    )  # fmt: skip
+    files = cl_case(other=[item])
+    files["plan.md"] = swap(
+        files["plan.md"], "\n## Project Structure", "\n" + manual_table([mv()]) + "\n## Project Structure"
+    )
+    return files
+
+
+CASES["manual-item"] = manual_item_case
+CASES["manual-item-unknown"] = lambda: manual_item_case("MV-099")
+
+
 # ---------------------------------------------------------------------------
 
 

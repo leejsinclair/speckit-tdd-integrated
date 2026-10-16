@@ -391,5 +391,52 @@ class DeferredComplianceTests(ComplianceCase):
         self.assertEqual(snapshot(root), before)
 
 
+class ManualComplianceTests(ComplianceCase):
+    """Open and failed manual checks are notices, never findings (FR-020, US3 scenarios 4 and 5)."""
+
+    def test_an_open_check_is_a_notice_and_the_feature_is_compliant(self):
+        result = self.compliance("manual-open")
+        self.assertEqual((result.code, result.out.splitlines()), (0, ["COMPLIANT", "notice: MV-001 manual: open"]))
+
+    def test_a_failed_check_is_a_notice_and_the_feature_is_still_compliant(self):
+        result = self.compliance("manual-fail")
+        self.assertEqual(
+            (result.code, result.out.splitlines()), (0, ["COMPLIANT", "notice: MV-001 manual: fail by A Person"])
+        )
+
+    def test_a_passed_check_is_not_a_notice(self):
+        result = self.compliance("manual-pass")
+        self.assertEqual((result.code, result.out), (0, "COMPLIANT\n"))
+
+    def test_json_carries_the_notices(self):
+        data = json.loads(self.compliance("manual-fail", "--json").out)
+        self.assertEqual((data["verdict"], data["notices"]), ("COMPLIANT", ["MV-001 manual: fail by A Person"]))
+
+    def test_a_changed_result_row_breaks_the_chain_under_c4(self):
+        root = self.repo("manual-fail")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.assertIn("| MV-001 | fail |", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| MV-001 | fail |", "| MV-001 | pass |"))
+        result = self.check(["compliance"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(
+            "C4 MR-01: the check value does not match the row: the record was changed after it was written",
+            result.out.splitlines(),
+        )
+
+    def test_a_changed_note_does_not_break_the_chain(self):
+        root = self.repo("manual-fail")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.assertIn("| A Person | - |", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| A Person | - |", "| A Person | looked again |"))
+        self.assertNotIn("C4", self.check(["compliance"], root).out)
+
+
 if __name__ == "__main__":
     unittest.main()

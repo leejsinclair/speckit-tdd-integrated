@@ -5,6 +5,7 @@ a passing fixture gives ``plan: passed``. The output is the same on ten consecut
 """
 
 import json
+import os
 import unittest
 
 from support import FEATURE_REL, RepoCase, fixture_text, read
@@ -28,7 +29,6 @@ def path_shaped(token):
 
 def code_shaped(token):
     return f"B5 BI-001: `{token}` is a code-shaped token that plan.md or tasks.md names and spec.md does not"
-
 
 
 EXPECTED = {
@@ -186,6 +186,51 @@ class RepeatabilityTests(RepoCase):
         for _run in range(9):
             again = self.check(["tasks"], root)
             self.assertEqual((again.code, again.out), (first.code, first.out))
+
+
+class ManualItemTests(RepoCase):
+    """A behaviour item may name a manual check and is never verified by tests (FR-018, D8)."""
+
+    ROW = "| BI-003 | - | MV-001 | {status} | - |"
+
+    def run_in(self, fixture, args):
+        root = self.repo(fixture)
+        return root, self.check(args, root)
+
+    def test_an_item_naming_a_manual_check_the_plan_holds_passes_b2(self):
+        _root, result = self.run_in("manual-item", ["plan"])
+        self.assertEqual((result.code, result.out), (0, "plan: passed\n"), result)
+
+    def test_an_item_naming_a_manual_check_the_plan_lacks_is_a_b2_finding(self):
+        _root, result = self.run_in("manual-item-unknown", ["plan"])
+        self.assertEqual(result.code, 1, result)
+        self.assertEqual(
+            result.out.splitlines(),
+            ["plan: failed, 1 finding", "B2 BI-003: MV-099 is not in the Manual verification table"],
+        )
+
+    def test_the_item_reads_manual_open_and_is_listed_as_not_verified_by_tests(self):
+        _root, result = self.run_in("manual-item", ["status"])
+        self.assertIn(self.ROW.format(status="manual (open)"), result.out.splitlines())
+        self.assertIn("- MV-001 manual: open", result.out.splitlines())
+
+    def test_the_item_shows_the_recorded_result_and_is_never_verified(self):
+        root, _result = self.run_in("manual-item", ["status"])
+        for outcome in ("pass", "fail"):
+            self.check(["manual", "--check", "MV-001", "--result", outcome, "--by", "A Person"], root)
+            out = self.check(["status"], root).out
+            self.assertIn(self.ROW.format(status=f"manual ({outcome})"), out.splitlines())
+            self.assertNotIn("| BI-003 | - | MV-001 | verified", out)
+
+    def test_an_item_naming_an_obligation_and_a_manual_check_is_judged_on_the_obligation(self):
+        root = self.repo("manual-item")
+        path = os.path.join(self.feature(root), "tests", "behaviour-checklist.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("Verified by: MV-001.", "Verified by: VO-001, MV-001."))
+        out = self.check(["status"], root).out
+        self.assertIn("| BI-003 | - | VO-001, MV-001 | verified | assert, pass |", out.splitlines())
 
 
 if __name__ == "__main__":

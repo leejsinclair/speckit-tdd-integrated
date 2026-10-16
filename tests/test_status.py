@@ -669,5 +669,67 @@ class DeferredStatusTests(StatusCase):
         self.assertEqual(summary_body(read(self.feature(root), "tdd-evidence.md")), self.check(["status"], root).out)
 
 
+class ManualStatusTests(StatusCase):
+    """Each manual check is shown open, or done with its result and name (FR-017, FR-019)."""
+
+    def lines(self, fixture):
+        return self.status(fixture).out.splitlines()
+
+    def test_an_open_check_is_listed_as_not_verified_by_tests(self):
+        lines = self.lines("manual-open")
+        self.assertIn("- MV-001 manual: open", lines)
+        self.assertIn("Counts: verified 2, deferred 0, manual checks 1 open", lines)
+
+    def test_a_done_check_shows_its_result_and_name(self):
+        lines = self.lines("manual-pass")
+        self.assertIn("- MV-001 manual: pass by A Person", lines)
+        self.assertIn("Counts: verified 2, deferred 0, manual checks 0 open, 1 passed", lines)
+
+    def test_a_failed_check_is_shown_with_its_name_and_counted(self):
+        lines = self.lines("manual-fail")
+        self.assertIn("- MV-001 manual: fail by A Person", lines)
+        self.assertIn("Counts: verified 2, deferred 0, manual checks 0 open, 1 failed", lines)
+
+    def test_status_exits_0_in_every_case(self):
+        for fixture in ("manual-open", "manual-pass", "manual-fail"):
+            self.assertEqual(self.status(fixture).code, 0, fixture)
+
+    def test_the_stored_summary_is_the_view(self):
+        for fixture in ("manual-open", "manual-pass", "manual-fail"):
+            with self.subTest(fixture=fixture):
+                root = self.repo(fixture)
+                self.assertEqual(
+                    summary_body(read(self.feature(root), "tdd-evidence.md")), self.check(["status"], root).out
+                )
+
+    def test_no_obligation_is_changed_by_a_manual_check(self):
+        out = self.status("manual-pass").out
+        self.assertIn("| VO-001 | FR-001, US1-AS1 | verified |", out)
+        self.assertNotIn("No test tooling", out)
+
+    def test_json_carries_the_checks_and_the_counts(self):
+        data = json.loads(self.status("manual-fail", "--json").out)
+        self.assertEqual(
+            data["not_verified_by_tests"],
+            [{"id": "MV-001", "state": "manual", "reason": "fail by A Person", "result": "fail"}],
+        )
+        self.assertEqual(
+            data["counts"],
+            {"verified": 2, "deferred": 0, "manual_open": 0, "manual_failed": 1, "manual_passed": 0},
+        )
+
+    def test_a_failed_check_is_listed_before_an_open_one(self):
+        root = self.repo("manual-open")
+        plan = os.path.join(self.feature(root), "plan.md")
+        with open(plan) as handle:
+            text = handle.read()
+        row = "| MV-002 | FR-001 | Do it | It works | Manual only |\n"
+        with open(plan, "w") as handle:
+            handle.write(text.replace("\n## Project Structure", row + "\n## Project Structure", 1))
+        self.check(["manual", "--check", "MV-002", "--result", "fail", "--by", "A Person"], root)
+        lines = self.check(["status"], root).out.splitlines()
+        self.assertLess(lines.index("- MV-002 manual: fail by A Person"), lines.index("- MV-001 manual: open"))
+
+
 if __name__ == "__main__":
     unittest.main()
