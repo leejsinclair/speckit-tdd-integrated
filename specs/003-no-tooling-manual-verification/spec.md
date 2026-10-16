@@ -13,6 +13,8 @@
 ### Session 2026-10-17
 
 - Q: For a project with no runnable test command, should the process propose and install a framework? → A: No. The process warns, records that there is no test tooling, and carries on. It never chooses or installs a framework, and the checks switch on once the developer declares a command.
+- Q: Should the process stop or warn more strongly when every obligation in a feature is deferred? → A: No. It reports only. There is no setting, and compliance gives notices and never fails, whatever the proportion of obligations deferred.
+- Q: Can the agent defer an obligation on its own? → A: Only when the reason is a recorded environment failure or no test tooling. A deferral for any other reason needs a named person's approval, as other exceptions do.
 - Q: How are checks that cannot be run, or that only a person can do, recorded? → A: A Manual verification list in the plan, and a `deferred` status for an obligation, with a reason. Neither blocks completion of a task, and neither is ever reported as verified.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -46,11 +48,12 @@ A developer's feature needs a service the agent cannot reach, such as a cache, a
 **Acceptance Scenarios**:
 
 1. **Given** an obligation whose test cannot be run because a service is unreachable, **When** the agent defers it with a reason, **Then** the deferral is recorded in the evidence with the reason and cannot be altered unnoticed.
-2. **Given** a deferred obligation, **When** the tasks that serve it are marked complete, **Then** the completion is accepted.
+2. **Given** a deferred obligation whose deferral stands (FR-008A), **When** the tasks that serve it are marked complete, **Then** the completion is accepted.
 3. **Given** a deferred obligation, **When** status is shown, **Then** the obligation appears as deferred with its reason, never as verified.
 4. **Given** a deferred obligation, **When** compliance is run, **Then** it lists the obligation as an open notice and the result is not a failure.
 5. **Given** an obligation that has been deferred, **When** a later run of its test passes, **Then** the obligation is shown as verified and is no longer listed as deferred.
 6. **Given** an obligation deferred without a reason, **When** the deferral is recorded, **Then** it is refused.
+7. **Given** an obligation that has no recorded environment failure and whose plan declares a test command, **When** it is deferred for another reason, **Then** the deferral is held until a named person approves it, and the tasks it serves are held until then.
 
 ---
 
@@ -96,7 +99,7 @@ A developer reading the documentation can tell when test-first development and t
 - **EC-03** A command is declared but not yet runnable (for example not yet installed). The first run fails as an environment failure and is handled as today, and the developer may defer the affected obligations.
 - **EC-04** A feature already has recorded runs and the plan is changed to no test tooling. The check reports the contradiction, because recorded runs name a command the plan no longer declares.
 - **EC-05** An obligation is deferred and the agent then runs its test and it passes. The deferral no longer stands, as User Story 2 scenario 5 states.
-- **EC-06** Every obligation of a feature is deferred. The feature may still complete, and the completion report states that nothing was verified by tests.
+- **EC-06** Every obligation of a feature is deferred. The feature may still complete, compliance gives notices and never fails, whatever the proportion deferred, there is no setting that changes this, and the completion report states that nothing was verified by tests.
 - **EC-07** A deferred obligation or an open manual check is the only evidence for a requirement the developer calls critical. The report lists it, and what to do about it is the developer's decision.
 - **EC-08** A manual check covers a requirement that is also exempted. Both may stand, and the exemption names the check.
 - **EC-09** Features planned before this change use the old plan layout without a Manual verification list. They are not reported as failing for lacking one.
@@ -118,7 +121,8 @@ A developer reading the documentation can tell when test-first development and t
 #### Deferred obligations
 
 - **FR-008**: An obligation MUST be capable of being recorded as deferred, with a reason that is not empty, as a tamper-evident record in the evidence.
-- **FR-009**: A deferred obligation MUST NOT hold the completion of the tasks that serve it.
+- **FR-008A**: An agent MUST be able to defer an obligation without approval only when the reason is an environment failure already recorded for that obligation, or the plan's record of no test tooling. A deferral for any other reason MUST NOT be accepted until a named person has approved it, and the approval MUST be recorded with the deferral.
+- **FR-009**: A deferred obligation MUST NOT hold the completion of the tasks that serve it, except while a deferral that FR-008A requires to be approved has not been.
 - **FR-010**: A deferred obligation MUST NOT be reported as verified in any report, and MUST be reported with its reason.
 - **FR-011**: A later passing run of a deferred obligation's test MUST make the obligation verified and remove it from the deferred list.
 - **FR-012**: When no test tooling is recorded, every obligation MUST be reported as deferred for that reason without a separate record for each.
