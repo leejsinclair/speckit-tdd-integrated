@@ -177,6 +177,19 @@ EXPECTATIONS_HEADER = [
     "Approved by",
     "New fingerprint",
 ]
+ITEM_BASELINE_HEADING = "## Behaviour items at baseline"
+ITEM_CHANGES_HEADING = "## Behaviour item changes"
+ITEM_BASELINE_HEADER = ["Item", "Verified by", "Fingerprint", "Seq"]
+ITEM_CHANGES_HEADER = [
+    "ID",
+    "Time",
+    "Item",
+    "Requirements",
+    "Justification",
+    "Alters behaviour",
+    "Approved by",
+    "New fingerprint",
+]
 DECISIONS_HEADER = ["ID", "Opened", "Question", "Tasks", "Status", "Answer", "Decided by", "Resolved"]
 # The record cells the check value is not computed over.
 UNCHAINED_CELLS = ("Classification", "Note", "Check")
@@ -310,6 +323,8 @@ def parse_spec(text):
     fr_ids = []
     sc_ids = []
     scenario_ids = []
+    scenario_text = {}
+    current = None
     story = None
     in_scenarios = False
     count = 0
@@ -320,11 +335,13 @@ def parse_spec(text):
         if heading:
             story = heading.group(1)
             in_scenarios = False
+            current = None
             count = 0
             continue
         if line.startswith("#"):
             story = None
             in_scenarios = False
+            current = None
             continue
         if story is None:
             continue
@@ -334,10 +351,17 @@ def parse_spec(text):
             count = 0
         elif in_scenarios and NUMBERED_ITEM.match(stripped):
             count += 1
-            scenario_ids.append(f"US{story}-AS{count}")
+            current = f"US{story}-AS{count}"
+            scenario_ids.append(current)
+            scenario_text[current] = NUMBERED_ITEM.sub("", stripped)
         elif in_scenarios and stripped and not line.startswith((" ", "\t")):
             in_scenarios = False
-    return Item(fr_ids=unique(fr_ids), sc_ids=unique(sc_ids), scenario_ids=scenario_ids)
+            current = None
+        elif in_scenarios and stripped and current is not None:
+            scenario_text[current] += "\n" + stripped
+    return Item(
+        fr_ids=unique(fr_ids), sc_ids=unique(sc_ids), scenario_ids=scenario_ids, scenario_text=scenario_text
+    )
 
 
 def verification_plan_section(text):
@@ -357,7 +381,9 @@ def verification_plan_section(text):
 def parse_plan(text):
     """Read the Verification Plan section of plan.md with the element rules of the contract."""
     findings = []
-    plan = Item(has_section=False, commands=[], obligations=[], exemptions=[], findings=findings)
+    plan = Item(
+        has_section=False, has_checklist_marker=False, commands=[], obligations=[], exemptions=[], findings=findings
+    )
     section = verification_plan_section(text)
     if section is None:
         findings.append(
@@ -365,6 +391,7 @@ def parse_plan(text):
         )
         return plan
     plan.has_section = True
+    plan.has_checklist_marker = any(line.rstrip() == CHECKLIST_MARKER for line in section.splitlines())
 
     seen = set()
     for row in read_table(section, COMMANDS_HEADING, COMMANDS_HEADER, "PLAN", PLAN_FILE, findings):
@@ -512,8 +539,9 @@ def parse_evidence(text, name=EVIDENCE_FILE):
     """Read every table of the evidence document, whose path relative to the feature is ``name``."""
     findings = []
     evidence = Item(
-        baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=findings, name=name
-    )
+        baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=findings, name=name,
+        item_baseline=[], item_changes=[],
+    )  # fmt: skip
 
     for row in read_table(text, BASELINE_HEADING, BASELINE_HEADER, "EVIDENCE", name, findings):
         evidence.baseline.append(
@@ -579,7 +607,199 @@ def parse_evidence(text, name=EVIDENCE_FILE):
                 cells=row,
             )
         )
+
+    # The two item tables exist only when the checklist rules applied; absent reads as empty.
+    if ITEM_BASELINE_HEADING in text.splitlines():
+        for row in read_table(text, ITEM_BASELINE_HEADING, ITEM_BASELINE_HEADER, "EVIDENCE", name, findings):
+            if not row["Seq"].isdigit():
+                findings.append(Finding("EVIDENCE", name, f"Seq '{row['Seq']}' is not a number"))
+                continue
+            evidence.item_baseline.append(
+                Item(
+                    item=row["Item"],
+                    verified_by=split_list(row["Verified by"]),
+                    fingerprint=row["Fingerprint"],
+                    seq=int(row["Seq"]),
+                    cells=row,
+                )
+            )
+    if ITEM_CHANGES_HEADING in text.splitlines():
+        for row in read_table(text, ITEM_CHANGES_HEADING, ITEM_CHANGES_HEADER, "EVIDENCE", name, findings):
+            evidence.item_changes.append(
+                Item(
+                    id=row["ID"],
+                    time=row["Time"],
+                    item=row["Item"],
+                    requirements=split_list(row["Requirements"]),
+                    justification=undash(row["Justification"]),
+                    alters_behaviour=yes_no(row["Alters behaviour"], "Alters behaviour", row["ID"], findings),
+                    approved_by=undash(row["Approved by"]),
+                    new_fingerprint=undash(row["New fingerprint"]),
+                    cells=row,
+                )
+            )
     return evidence
+
+
+# ---------------------------------------------------------------------------
+# Behaviour checklist (contracts/behaviour-checklist.md)
+#
+# The script reads the checklist and never writes it. Malformed input is
+# reported as B4 findings and never raises.
+# ---------------------------------------------------------------------------
+
+CHECKLIST_MARKER = "### Behaviour checklist"
+CHECKLIST_DIR = "tests"
+CHECKLIST_FILE = "behaviour-checklist.md"
+OTHER_HEADING = "Other behaviours"
+CLAUSE_ORDER = ("Given", "When", "Then")
+
+ITEM_START = re.compile(r"^- \*\*(BI-[^*\s]*)\*\*")
+ITEM_LINE = re.compile(r"^- \*\*(BI-[^*\s]*)\*\*\s+Expresses:(.*?)\.\s+Verified by:(.*?)\.?\s*$")
+ITEM_ID = re.compile(r"^BI-\d{3,}$")
+CLAUSE_LINE = re.compile(r"^\s+- \*\*(Given|When|Then|And)\*\*\s*(.*?)\s*$")
+SCENARIO_HEADING = re.compile(r"^## (US\d+-AS\d+)\s*(?::.*)?$")
+CHECKBOX = re.compile(r"^\s*- \[[ xX]\]")
+STATUS_LINE = re.compile(r"^(Status:|\*\*Status\*\*)")
+LIST_NUMBER = re.compile(r"^\d+\.\s")
+
+
+def normalise(text):
+    """Text as compared for B6 and fingerprinted: no quote marks, list number or emphasis, one space per run."""
+    lines = []
+    for number, raw in enumerate(text.splitlines()):
+        line = re.sub(r"^\s*>\s?", "", raw)
+        lines.append(LIST_NUMBER.sub("", line.lstrip()) if number == 0 else line)
+    flat = "\n".join(lines).replace("**", "").replace("__", "")
+    return " ".join(flat.split())
+
+
+def item_fingerprint(item):
+    """First six hex characters of SHA-256 over the item's normalised clauses, '<keyword> <text>' per line."""
+    text = "\n".join(normalise(f"{keyword} {words}") for keyword, words in item.clauses)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
+
+
+def clause_findings(item, findings):
+    """B4 findings for the Given, When, Then order of one item's clauses."""
+    stage = 0
+    seen = set()
+    for keyword, _words in item.clauses:
+        if keyword == "And":
+            if stage == 0:
+                findings.append(Finding("B4", item.id, "an And clause comes before Given"))
+            continue
+        position = CLAUSE_ORDER.index(keyword)
+        if keyword in seen:
+            findings.append(Finding("B4", item.id, f"{keyword} is repeated"))
+        elif position != stage:
+            findings.append(Finding("B4", item.id, f"{keyword} is out of order: Given, When, Then"))
+        seen.add(keyword)
+        stage = max(stage, position + 1)
+    for keyword in CLAUSE_ORDER:
+        if keyword not in seen:
+            findings.append(Finding("B4", item.id, f"{keyword} is missing"))
+
+
+def parse_checklist(text):
+    """Read the behaviour checklist: sections, items with their clauses, and B4 findings."""
+    findings = []
+    sections = []
+    items = []
+    seen_ids = set()
+    section = None
+    item = None
+    quoting = False
+    fence = None
+    for number, line in enumerate(text.splitlines(), 1):
+        marker = FENCE.match(line)
+        if marker and fence is None:
+            fence = marker.group(1)[0]
+            continue
+        if marker and fence is not None and marker.group(1)[0] == fence and not marker.group(2).strip():
+            fence = None
+            continue
+        if fence is not None:
+            continue
+        where = f"line {number}"
+        if CHECKBOX.match(line):
+            findings.append(Finding("B4", where, "a task-list checkbox: the checklist holds no status"))
+        if STATUS_LINE.match(line):
+            findings.append(Finding("B4", where, "a status line: the checklist holds no status"))
+        if line.startswith("## ") or line.rstrip() == "##":
+            item = None
+            quoting = False
+            heading = line[2:].strip()
+            scenario = SCENARIO_HEADING.match(line.rstrip())
+            if scenario:
+                section = Item(kind="scenario", heading=scenario.group(1), quote="", line=number, items=[])
+                quoting = True
+            elif heading == OTHER_HEADING:
+                section = Item(kind="other", heading=OTHER_HEADING, quote="", line=number, items=[])
+            else:
+                section = None
+                findings.append(Finding("B4", where, f"'{heading}' is not a recognised section"))
+                continue
+            sections.append(section)
+            continue
+        if quoting:
+            if line.startswith(">"):
+                quote = re.sub(r"^>\s?", "", line)
+                section.quote = section.quote + "\n" + quote if section.quote else quote
+                continue
+            if section.quote or line.strip():
+                quoting = False
+            else:
+                continue
+        start = ITEM_START.match(line)
+        if start:
+            item = None
+            ident = start.group(1)
+            full = ITEM_LINE.match(line.rstrip())
+            if not ITEM_ID.match(ident):
+                findings.append(Finding("B4", ident, "the id must be BI- and three or more digits"))
+            elif ident in seen_ids:
+                findings.append(Finding("B4", ident, "the id is used more than once"))
+            seen_ids.add(ident)
+            if full is None:
+                findings.append(Finding("B4", ident, "the item line is not 'Expresses: <ids>. Verified by: <links>.'"))
+            expresses = split_list(full.group(2)) if full else []
+            verified = split_list(full.group(3)) if full else []
+            if full is not None and not expresses:
+                findings.append(Finding("B4", ident, "the Expresses list is empty"))
+            item = Item(
+                id=ident, line=number, expresses=expresses, verified_by=verified, clauses=[],
+                section=section.heading if section else None,
+            )  # fmt: skip
+            items.append(item)
+            if section is None:
+                findings.append(Finding("B4", ident, "the item is outside a recognised section"))
+            else:
+                section.items.append(item)
+            continue
+        clause = CLAUSE_LINE.match(line)
+        if clause:
+            if item is None:
+                findings.append(Finding("B4", where, "a clause is outside an item"))
+            else:
+                item.clauses.append((clause.group(1), clause.group(2)))
+    for entry in items:
+        clause_findings(entry, findings)
+    for entry in sections:
+        if entry.kind == "scenario" and not entry.items:
+            findings.append(Finding("B4", entry.heading, "the scenario section has no items"))
+    return Item(sections=sections, items=items, findings=findings)
+
+
+def checklist_applies(feature_dir):
+    """Whether the checklist rules apply: the plan holds the marker, or the checklist file exists."""
+    if os.path.isfile(os.path.join(feature_dir, CHECKLIST_DIR, CHECKLIST_FILE)):
+        return True
+    try:
+        text = read_text(os.path.join(feature_dir, PLAN_FILE))
+    except (OSError, UnicodeDecodeError):
+        return False
+    return text is not None and parse_plan(text).has_checklist_marker
 
 
 # ---------------------------------------------------------------------------
@@ -693,7 +913,7 @@ def empty_evidence(path=TESTS_EVIDENCE_FILE):
     """Evidence with no document yet: findings name it as 0.1.0 did, and the first write goes to ``path``."""
     return Item(
         baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=[], text=None,
-        name=EVIDENCE_FILE, path=path,
+        name=EVIDENCE_FILE, path=path, item_baseline=[], item_changes=[],
     )  # fmt: skip
 
 
