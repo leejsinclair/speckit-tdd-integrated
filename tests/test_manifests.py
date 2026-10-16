@@ -542,6 +542,33 @@ class BehaviourItemGuidanceTests(unittest.TestCase):
         self.assertIn("approved when it alters behaviour", section)
 
 
+class FindingsFromTheHaikuRunsTests(unittest.TestCase):
+    """Guidance added after the Haiku runs of stories 07 and 08 (quickstart, T056)."""
+
+    def test_tasks_wrapper_stops_when_the_plan_check_fails(self):
+        found = flat(wrapper_parts("tasks")[0])
+        self.assertIn("run the `plan` check first", found)
+        self.assertRegex(found, r"tdd_check\.py plan")
+        self.assertIn("If it exits non-zero, stop", found)
+        self.assertIn("do not generate tasks while the plan check fails", found)
+        stop = found[found.index("If it exits non-zero, stop") :]
+        self.assertIn("__SPECKIT_COMMAND_PLAN__", stop[:400])
+
+    def test_tasks_wrapper_check_comes_after_the_older_feature_gaps_and_before_generation(self):
+        above = flat(wrapper_parts("tasks")[1])
+        gap = above.index("no `### Behaviour checklist` sub-heading")
+        self.assertLess(gap, above.index("run the `plan` check first"))
+
+    def test_rules_exempt_an_unchanged_behaviour_requirement_that_has_no_way_to_vary(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("**Ambiguity.**") : text.index("**Verification commands.**")])
+        self.assertIn("states that existing behaviour stays unchanged", section)
+        self.assertIn("gives no way to vary that behaviour", section)
+        self.assertIn("exemption", section)
+        self.assertIn("unchanged by construction", section)
+        self.assertIn("in the Completion Report", section)
+
+
 GAP_PHRASE = "no `### Behaviour checklist` sub-heading"
 
 
