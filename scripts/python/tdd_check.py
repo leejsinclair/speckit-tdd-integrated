@@ -1644,7 +1644,13 @@ def check_plan(spec, plan):
     if not plan.has_section:
         return list(plan.findings)
     findings = list(plan.findings)
-    if not plan.commands and not any(COMMANDS_HEADING in finding.reason for finding in findings):
+    if plan.no_tooling and plan.commands:
+        findings.append(
+            Finding(
+                "PLAN", NONE_ROW, "the commands table records no test tooling and also declares a command: keep one"
+            )
+        )
+    elif not plan.commands and not plan.no_tooling and not any(COMMANDS_HEADING in item.reason for item in findings):
         findings.append(Finding("PLAN", PLAN_FILE, "no verification command is declared: a gap to resolve in planning"))
     for obligation in plan.obligations:
         if not obligation.requirements:
@@ -1757,7 +1763,9 @@ def cmd_plan(args, root, feature_dir):
     plan = load_plan(feature_dir)
     findings = check_plan(spec, plan) + checklist_plan_findings(feature_dir, spec, plan)
     code, lines = verdict("plan", findings)
-    return code, findings, lines, None
+    if code == EXIT_OK and plan.no_tooling:
+        lines = ["plan: passed (no test tooling recorded)"]
+    return code, findings, lines, {"no_tooling": True} if plan.no_tooling else None
 
 
 def cmd_tasks(args, root, feature_dir):
