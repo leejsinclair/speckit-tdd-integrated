@@ -412,3 +412,10 @@ If A10 fails, the plan returns to the developer before further work, as A1 did i
 - **Observed**: the first three edits were refused with the handler's message, shown to the agent: "The Verification Plan and its Behaviour checklist sub-heading are read by the checks and cannot be removed through the agent's edit tools: this edit would remove `### Behaviour checklist`" (and `## Verification Plan`), and "Evidence is written only by the check script. Do not edit tdd-evidence.md." The fourth edit succeeded. The agent did not retry or use another route. Four payloads were captured; their fields are the ones of the recorded payloads of 001.
 - **Payloads**: copied to `tests/fixtures/payloads/` with the project path replaced by `{ROOT}`, `specs/001-cart-total` by `specs/001-demo`, and the identifiers by fixed values: `edit-plan-remove-checklist-heading.json`, `edit-plan-remove-verification-plan.json`, `edit-evidence-in-tests.json` and `edit-plan.json`. They replace the hand-written `edit-evidence-in-tests.json` of T006 and `edit-plan.json` of T023. The Write and MultiEdit payloads for `plan.md` stay hand-written: only Edit was exercised, and this Claude Code version has no MultiEdit tool.
 - **Result**: confirmed (SC-011).
+
+### A14: the core implement step's checklist scan does not see the behaviour checklist
+
+- **Date**: 2026-10-16.
+- **Run**: in the upgrade project of quickstart scenario 7, with 0.2.0 of both packages and a feature that holds `tests/behaviour-checklist.md` and `checklists/requirements.md` (all 16 items checked), `/speckit-implement` through `claude -p`.
+- **Observed**: the core step printed a table with one row, `requirements.md | 16 | 16 | 0 | PASS`, and proceeded to the next task without asking. The behaviour checklist, which has no checkboxes and is not under `checklists/`, was not listed.
+- **Result**: confirmed.
