@@ -1488,6 +1488,262 @@ def _checklist_and_plan_findings():
 
 
 # ---------------------------------------------------------------------------
+# Behaviour item cases (T034): fixing, change records, G10, G11, status and C8
+# ---------------------------------------------------------------------------
+
+CL_ITEM_4 = bi(
+    "BI-004", ["SC-001"], ["VO-002"],
+    [("Given", "a cart with two items"), ("When", "the shopper asks for the total"),
+     ("Then", "the total is shown within one second")],
+)  # fmt: skip
+CL_ITEM_5 = bi(
+    "BI-005", ["FR-001", "FR-002"], ["VO-001", "VO-002"],
+    [("Given", "any cart"), ("When", "the shopper asks for the total"), ("Then", "a total is returned")],
+)  # fmt: skip
+BASE_ITEMS = [CL_ITEM_1, CL_ITEM_2, CL_ITEM_3, CL_ITEM_4]
+CL_ITEM_2_CHANGED = with_item(CL_ITEM_2, clauses=CL_ITEM_2["clauses"][:2] + [("Then", "the total is 8")])
+
+
+def item_fp(item):
+    """The fingerprint of an item as the contract defines it, computed independently of the script."""
+    text = "\n".join(f"{keyword} {words}" for keyword, words in item["clauses"])
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
+
+
+def item_rows(items=BASE_ITEMS, seq="1"):
+    return [
+        {"Item": item["id"], "Verified by": ", ".join(item["verified"]), "Fingerprint": item_fp(item), "Seq": seq}
+        for item in items
+    ]
+
+
+def bx(ident, item, fingerprint, alters="no", approved="-", requirements="FR-002, US1-AS2"):
+    return {
+        "ID": ident, "Time": stamp(31), "Item": item, "Requirements": requirements,
+        "Justification": "The expected total was mistyped", "Alters behaviour": alters, "Approved by": approved,
+        "New fingerprint": fingerprint,
+    }  # fmt: skip
+
+
+def item_checklist(items=BASE_ITEMS):
+    """Scenario items go under their scenario, the rest under Other behaviours, in id order."""
+    one = [item for item in items if "US1-AS1" in item["expresses"]]
+    two = [item for item in items if "US1-AS2" in item["expresses"]]
+    other = [item for item in items if item not in one + two]
+    return checklist_text([("US1-AS1", SCENARIO_1, one), ("US1-AS2", SCENARIO_2, two)], other)
+
+
+def item_case(items=BASE_ITEMS, rows=None, changes=(), records=BOTH_CYCLES, tasks=TASKS, summary=DEFAULT_SUMMARY,
+              decisions=(), **more):  # fmt: skip
+    files = with_checklist(item_checklist(items), tasks=tasks, **more)
+    text = evidence(records, decisions=decisions, summary=summary)
+    files["tdd-evidence.md"] = text + item_tables(item_rows() if rows is None else rows, list(changes))
+    return files
+
+
+CASES["items-baseline"] = item_case
+
+
+@case("item-changed")
+def _item_changed():
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4])
+
+
+@case("item-removed")
+def _item_removed():
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2, CL_ITEM_3])
+
+
+CHANGED_FP = item_fp(CL_ITEM_2_CHANGED)
+
+
+@case("item-change-recorded")
+def _item_change_recorded():
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[bx("BX-01", "BI-002", CHANGED_FP)])
+
+
+@case("item-change-awaiting-approval")
+def _item_change_awaiting_approval():
+    change = bx("BX-01", "BI-002", CHANGED_FP, alters="yes")
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[change])
+
+
+@case("item-change-approved")
+def _item_change_approved():
+    change = bx("BX-01", "BI-002", CHANGED_FP, alters="yes", approved="Lee Sinclair")
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[change])
+
+
+@case("item-removal-recorded")
+def _item_removal_recorded():
+    return item_case(
+        items=[CL_ITEM_1, CL_ITEM_2, CL_ITEM_3], changes=[bx("BX-01", "BI-004", "removed", requirements="SC-001")]
+    )
+
+
+@case("item-added-after-baseline")
+def _item_added_after_baseline():
+    return item_case(items=BASE_ITEMS + [CL_ITEM_5])
+
+
+@case("item-relinked")
+def _item_relinked():
+    # Verified by changes, the clauses do not: not a change.
+    return item_case(items=[with_item(CL_ITEM_1, verified=["VO-001", "VO-002"])] + BASE_ITEMS[1:])
+
+
+@case("item-id-reused")
+def _item_id_reused():
+    reused = with_item(CL_ITEM_4, clauses=[("Given", "an empty cart"), ("When", "the shopper asks for the total"),
+                                           ("Then", "the total is shown in pounds")])  # fmt: skip
+    change = bx("BX-01", "BI-004", "removed", requirements="SC-001")
+    return item_case(items=BASE_ITEMS[:3] + [reused], changes=[change])
+
+
+@case("g11-requirement-added")
+def _g11_requirement_added():
+    spec = swap(SPEC, "- **FR-003**:", "- **FR-004**: The system MUST total a cart in a single currency.\n- **FR-003**:")
+    return item_case(spec=spec)
+
+
+@case("g11-item-broken")
+def _g11_item_broken():
+    broken = with_item(CL_ITEM_1, clauses=CL_ITEM_1["clauses"][:2] + [("Then", "src/cart.py returns zero")])
+    return item_case(items=[broken] + BASE_ITEMS[1:])
+
+
+@case("g11-before-baseline")
+def _g11_before_baseline():
+    broken = with_item(CL_ITEM_1, clauses=CL_ITEM_1["clauses"][:2] + [("Then", "src/cart.py returns zero")])
+    return item_case(items=[broken] + BASE_ITEMS[1:], records=[], rows=[])
+
+
+@case("red-unlinked-obligation")
+def _red_unlinked_obligation():
+    # A discovered obligation that no item names, after a baseline.
+    plan = swap(
+        PLAN,
+        "\n### Verification exemptions",
+        "| VO-003 | EC-02 | A very large cart is totalled | The total is returned | unit | discovered |\n"
+        "\n### Verification exemptions",
+    )
+    return item_case(records=[baseline()], rows=item_rows(), plan=plan)
+
+
+# Status cases: the checklist also holds BI-005, which names both obligations.
+STATUS_ITEMS = BASE_ITEMS + [CL_ITEM_5]
+MIXED = bi("BI-006", ["FR-001", "FR-003"], ["VO-001", "exemption FR-003"], CL_ITEM_1["clauses"])
+
+
+def status_case(records, items=STATUS_ITEMS, **kwargs):
+    return item_case(items=items, records=records, rows=item_rows(items), **kwargs)
+
+
+@case("items-status-verified")
+def _items_status_verified():
+    return status_case(BOTH_CYCLES)
+
+
+@case("items-status-partial")
+def _items_status_partial():
+    return status_case(FIRST_CYCLE)
+
+
+@case("items-status-exempt")
+def _items_status_exempt():
+    return status_case([baseline()])
+
+
+@case("items-status-failed")
+def _items_status_failed():
+    return status_case([baseline(), RED_1, FAILED_GREEN])
+
+
+@case("items-status-blocked")
+def _items_status_blocked():
+    return status_case(FIRST_CYCLE + [RED_2], decisions=[dn("DN-01", "T014")])
+
+
+@case("items-status-mixed-exemption")
+def _items_status_mixed_exemption():
+    return status_case(FIRST_CYCLE, items=BASE_ITEMS + [MIXED])
+
+
+# Compliance cases: a finished feature with items.
+OBLIGATION_ROWS = (VERIFIED_1, VERIFIED_2)
+
+
+def item_summary(item_lines, not_verified="FR-003 (exempt: see plan)", changes="none", rows=OBLIGATION_ROWS):
+    head = summary(*rows, not_verified=not_verified)
+    table_head = (
+        "| Behaviour item | Scenario | Obligations | Status | Tests |\n"
+        "|----------------|----------|-------------|--------|-------|\n"
+    )
+    before, after = head.split("\n\n**Not verified**", 1)
+    return (
+        before + "\n\n" + table_head + "\n".join(item_lines) + "\n\n**Not verified**" + after.replace(
+            "\n\n**Pre-existing failures**", "\n\n**Item changes**: " + changes + ".\n\n**Pre-existing failures**", 1
+        )
+    )
+
+
+VERIFIED_ITEM_LINES = [
+    "| BI-001 | US1-AS1 | VO-001 | verified | assert, pass |",
+    "| BI-002 | US1-AS2 | VO-002 | verified | assert, pass |",
+    "| BI-003 | - | exemption FR-003 | exempt | - |",
+    "| BI-004 | - | VO-002 | verified | assert, pass |",
+]
+
+
+def compliant_items(items=BASE_ITEMS, rows=None, changes=(), summary_text=None, **more):
+    text = summary_text if summary_text is not None else item_summary(VERIFIED_ITEM_LINES)
+    return item_case(items=items, rows=rows, changes=changes, records=BOTH_CYCLES, tasks=EVERY_TASK, summary=text, **more)
+
+
+CASES["compliance-c8-pass"] = compliant_items
+
+
+@case("compliance-c8-missing-checklist")
+def _compliance_c8_missing_checklist():
+    files = compliant_items()
+    del files["tests/behaviour-checklist.md"]
+    return files
+
+
+@case("compliance-c8-rule-fails")
+def _compliance_c8_rule_fails():
+    # BI-003 deleted from the checklist and recorded as removed: FR-003 is then named by no item (B1).
+    removal = bx("BX-01", "BI-003", "removed", requirements="FR-003")
+    lines = [line for line in VERIFIED_ITEM_LINES if "BI-003" not in line]
+    return compliant_items(items=[CL_ITEM_1, CL_ITEM_2, CL_ITEM_4], changes=[removal],
+                           summary_text=item_summary(lines, changes="BX-01 BI-003 (recorded)"))  # fmt: skip
+
+
+@case("compliance-c8-unrecorded-change")
+def _compliance_c8_unrecorded_change():
+    lines = list(VERIFIED_ITEM_LINES)
+    return compliant_items(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4],
+                           summary_text=item_summary(lines, changes="BI-002 changed, not recorded"))  # fmt: skip
+
+
+@case("compliance-c8-id-reused")
+def _compliance_c8_id_reused():
+    files = _item_id_reused()
+    files["tasks.md"] = EVERY_TASK
+    files["tdd-evidence.md"] = evidence(BOTH_CYCLES, summary=item_summary(VERIFIED_ITEM_LINES)) + item_tables(
+        item_rows(), [bx("BX-01", "BI-004", "removed", requirements="SC-001")]
+    )
+    return files
+
+
+@case("compliance-c7-item-stale")
+def _compliance_c7_item_stale():
+    # The stored Summary shows BI-004 verified; its obligation VO-002 has no records.
+    stale = item_summary(VERIFIED_ITEM_LINES)
+    return item_case(records=FIRST_CYCLE, tasks=done(TASKS, "T011", "T012"), summary=stale)
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
