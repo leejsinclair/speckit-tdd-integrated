@@ -2067,6 +2067,88 @@ def _defer_no_tooling():
     return no_tooling()
 
 
+# Gate, status and compliance cases for deferrals (T015). Record 4 is a failure of VO-002 that did not
+# count as a failing-first run (Valid no), as a run whose output lacked the expected text is.
+ENV_RED = rec(
+    "T013", "VO-002", "red", "unit", "assert", "fail", "no", "environment", "tests/test_cart.py", FP_B,
+    "the expected text was not in the output",
+)  # fmt: skip
+DEFECT_RED = dict(ENV_RED, Classification="defect")
+OPEN_T013 = done(TASKS, "T011", "T012")
+ENV_BASIS = "environment failure #4"
+
+
+def deferral_case(deferrals, records, exceptions=(), tasks=OPEN_T013, summary=DEFAULT_SUMMARY):
+    files = variant(tasks=tasks, evidence=evidence(records, exceptions=exceptions, summary=summary))
+    if deferrals:
+        files["tdd-evidence.md"] += deferrals_table(deferrals)
+    return files
+
+
+@case("deferred-standing")
+def _deferred_standing():
+    return deferral_case([df("DF-01", "VO-002", basis=ENV_BASIS)], VALID_RECORDS + [ENV_RED])
+
+
+@case("deferred-waiting")
+def _deferred_waiting():
+    waiting = df("DF-01", "VO-002", reason="too slow", basis="other", needs="yes")
+    return deferral_case([waiting], VALID_RECORDS + [ENV_RED])
+
+
+@case("deferred-approved")
+def _deferred_approved():
+    approved = df("DF-01", "VO-002", reason="too slow", basis="other", needs="yes", approved="A Person")
+    return deferral_case([approved], VALID_RECORDS + [ENV_RED])
+
+
+@case("deferred-then-verified")
+def _deferred_then_verified():
+    # The deferral rests on record 4; the test was then written, failed first and passed.
+    records = VALID_RECORDS + [ENV_RED, red("T013", "VO-002"), green("T014", "VO-002")]
+    return deferral_case([df("DF-01", "VO-002", basis=ENV_BASIS)], records)
+
+
+@case("deferred-and-blocked-exception")
+def _deferred_and_blocked_exception():
+    blocked = exc("EX-01", "T013", "VO-002", "environment-blocked", "The test database cannot be reached", "-", after=4)
+    return deferral_case([df("DF-01", "VO-002", basis=ENV_BASIS)], VALID_RECORDS + [ENV_RED], exceptions=[blocked])
+
+
+@case("deferred-after-failure")
+def _deferred_after_failure():
+    # The latest record of the task is a defect failure; a person approved the deferral.
+    approved = df("DF-01", "VO-002", reason="too slow", basis="other", needs="yes", approved="A Person")
+    return deferral_case([approved], VALID_RECORDS + [DEFECT_RED])
+
+
+DEFERRED_SUMMARY = (
+    "_Generated from the tables below on 2026-10-10T14:00:00Z._\n\n"
+    "| Obligation | Requirements | Status | Tests | Latest result |\n"
+    "|------------|--------------|--------|-------|---------------|\n"
+    "| VO-001 | FR-001, US1-AS1 | verified | assert, pass | pass (#3) |\n"
+    "| VO-002 | FR-002, US1-AS2, SC-001, DC-01, EC-01 | deferred | assert | fail (#4) |\n\n"
+    "Not verified by tests\n\n"
+    "- VO-002 deferred: needs queue (DF-01)\n\n"
+    "Counts: verified 1, deferred 1\n\n"
+    "**Not verified**: FR-002 (VO-002 deferred), US1-AS2 (VO-002 deferred), SC-001 (VO-002 deferred), "
+    "DC-01 (VO-002 deferred), EC-01 (VO-002 deferred), FR-003 (exempt: see plan).\n\n"
+    "**Open decisions**: none. **Exceptions**: none. **Expectation changes**: none.\n\n"
+    "**Pre-existing failures**: none.\n"
+)
+
+
+@case("deferred-compliant")
+def _deferred_compliant():
+    # Every task complete, a passing checkpoint, one obligation deferred on an environment failure.
+    return deferral_case(
+        [df("DF-01", "VO-002", basis=ENV_BASIS)],
+        VALID_RECORDS + [ENV_RED, checkpoint()],
+        tasks=EVERY_TASK,
+        summary=DEFERRED_SUMMARY,
+    )
+
+
 # ---------------------------------------------------------------------------
 
 

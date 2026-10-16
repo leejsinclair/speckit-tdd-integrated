@@ -346,5 +346,50 @@ class ExampleRunTests(unittest.TestCase):
             self.assertEqual(snapshot(os.path.join(REPO, feature_dir)), before)
 
 
+class DeferredComplianceTests(ComplianceCase):
+    """Deferred obligations are notices, never findings (FR-020, SC-003)."""
+
+    def test_a_feature_with_a_standing_deferral_is_compliant_with_a_notice(self):
+        result = self.compliance("deferred-compliant")
+        self.assertEqual((result.code, result.err), (0, ""), result)
+        self.assertEqual(result.out.splitlines(), ["COMPLIANT", "notice: VO-002 deferred: needs queue (DF-01)"])
+
+    def test_json_carries_the_notice(self):
+        data = json.loads(self.compliance("deferred-compliant", "--json").out)
+        self.assertEqual((data["verdict"], data["exit_code"]), ("COMPLIANT", 0))
+        self.assertEqual(data["notices"], ["VO-002 deferred: needs queue (DF-01)"])
+
+    def test_a_changed_deferral_row_breaks_the_chain_under_c4(self):
+        root = self.repo("deferred-compliant")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("| VO-002 | needs queue |", "| VO-002 | no longer needed |"))
+        result = self.check(["compliance"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(
+            "C4 DF-01: the check value does not match the row: the record was changed after it was written",
+            result.out.splitlines(),
+        )
+
+    def test_an_approver_added_to_a_deferral_does_not_break_the_chain(self):
+        root = self.repo("deferred-compliant")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.assertIn("| no | - |", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| no | - |", "| no | A Person |"))
+        result = self.check(["compliance"], root)
+        self.assertNotIn("C4", result.out)
+
+    def test_compliance_writes_nothing(self):
+        root = self.repo("deferred-compliant")
+        before = snapshot(root)
+        self.check(["compliance"], root)
+        self.assertEqual(snapshot(root), before)
+
+
 if __name__ == "__main__":
     unittest.main()

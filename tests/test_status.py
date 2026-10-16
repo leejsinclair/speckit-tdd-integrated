@@ -600,5 +600,74 @@ class ItemViewTests(RepoCase):
         self.assertNotIn("Item changes", out)
 
 
+class DeferredStatusTests(StatusCase):
+    """A standing deferral reads deferred with its reason, and never verified (FR-010, FR-011, D5)."""
+
+    BLOCK = [
+        "Not verified by tests",
+        "",
+        "- VO-002 deferred: needs queue (DF-01)",
+        "",
+        "Counts: verified 1, deferred 1",
+    ]
+
+    def row(self, fixture):
+        out = self.status(fixture).out
+        return [line for line in out.splitlines() if line.startswith("| VO-002")][0], out.splitlines()
+
+    def test_an_obligation_with_a_standing_deferral_reads_deferred_with_its_reason_and_id(self):
+        row, lines = self.row("deferred-standing")
+        self.assertEqual(row, f"| VO-002 | {REQS_2} | deferred | assert | fail (#4) |")
+        start = lines.index(self.BLOCK[0])
+        self.assertEqual(lines[start : start + len(self.BLOCK)], self.BLOCK)
+        self.assertNotIn("No test tooling: nothing is verified by tests", lines)
+
+    def test_it_is_deferred_after_an_environment_failure_rather_than_blocked(self):
+        row, _lines = self.row("deferred-standing")
+        self.assertIn("| deferred |", row)
+        self.assertNotIn("blocked", row)
+
+    def test_the_requirements_it_serves_are_listed_as_not_verified(self):
+        out = self.status("deferred-standing").out
+        self.assertIn("FR-002 (VO-002 deferred)", out)
+
+    def test_a_deferral_that_waits_for_approval_does_not_count_as_deferred(self):
+        row, lines = self.row("deferred-waiting")
+        self.assertIn("| blocked |", row)
+        self.assertNotIn("Not verified by tests", lines)
+
+    def test_an_approved_deferral_counts_as_deferred(self):
+        row, lines = self.row("deferred-approved")
+        self.assertIn("| deferred |", row)
+        self.assertIn("- VO-002 deferred: too slow (DF-01)", lines)
+
+    def test_a_later_passing_run_makes_it_verified_and_drops_it_from_the_list(self):
+        row, lines = self.row("deferred-then-verified")
+        self.assertIn("| verified |", row)
+        self.assertNotIn("Not verified by tests", lines)
+        self.assertFalse([line for line in lines if line.startswith("Counts:")])
+
+    def test_a_standing_deferral_and_an_environment_blocked_exception_read_deferred(self):
+        row, _lines = self.row("deferred-and-blocked-exception")
+        self.assertIn("| deferred |", row)
+
+    def test_a_defect_failure_followed_by_an_approved_deferral_reads_deferred(self):
+        row, _lines = self.row("deferred-after-failure")
+        self.assertIn("| deferred |", row)
+
+    def test_json_carries_the_deferral_and_the_counts(self):
+        data = json.loads(self.status("deferred-standing", "--json").out)
+        self.assertEqual(
+            data["not_verified_by_tests"],
+            [{"id": "VO-002", "state": "deferred", "reason": "needs queue", "deferral": "DF-01"}],
+        )
+        self.assertEqual(data["counts"], {"verified": 1, "deferred": 1})
+        self.assertNotIn("no_tooling", data)
+
+    def test_the_stored_summary_is_the_view(self):
+        root = self.repo("deferred-compliant")
+        self.assertEqual(summary_body(read(self.feature(root), "tdd-evidence.md")), self.check(["status"], root).out)
+
+
 if __name__ == "__main__":
     unittest.main()

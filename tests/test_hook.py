@@ -444,5 +444,33 @@ class NoToolingHookTests(SituationCase):
         self.assertIn("G11 T015 FR-004: B1: no behaviour item expresses it", result.err.splitlines())
 
 
+class DeferredHookTests(SituationCase):
+    """The hook holds a task for a deferral that waits for approval and names the way forward (FR-008A)."""
+
+    fixture = "deferred-waiting"
+
+    def test_a_task_held_by_g12_cannot_be_marked_complete(self):
+        result = self.edit("- [ ] T013", "- [X] T013")
+        self.assert_refused(result, "G12 T013 DF-01: needs approval and has no approver")
+
+    def test_the_refusal_names_how_to_approve(self):
+        err = " ".join(self.edit("- [ ] T013", "- [X] T013").err.split())
+        self.assertIn("A G12 finding means a deferral that does not rest on a recorded environment failure", err)
+        self.assertIn('approve --id <DF-nn> --by "<name>"', err)
+
+    def test_an_approved_deferral_lets_the_task_be_marked_complete(self):
+        root = self.repo("deferred-approved")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T013", new_string="- [X] T013")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assert_allowed(result)
+
+    def test_a_standing_deferral_on_an_environment_failure_lets_the_task_be_marked_complete(self):
+        root = self.repo("deferred-standing")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T014", new_string="- [X] T014")
+        self.assert_allowed(self.check(["hook"], root, stdin=json.dumps(payload)))
+
+
 if __name__ == "__main__":
     unittest.main()

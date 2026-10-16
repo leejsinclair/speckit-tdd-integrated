@@ -436,5 +436,79 @@ class NoToolingGateTests(GateCase):
         self.assertEqual(snapshot(root), before)
 
 
+class DeferredGateTests(GateCase):
+    """A standing deferral never holds a task; one waiting for approval does, by G12 (FR-008A, FR-009, D4)."""
+
+    G12 = "G12 {task} DF-01: needs approval and has no approver"
+    G3 = "G3 {task} VO-002: no valid failing-first record and no exception"
+
+    def lines(self, fixture, task):
+        result = self.gate(fixture, "--task", task)
+        return result, result.out.splitlines()
+
+    def test_a_standing_deferral_on_an_environment_failure_holds_neither_task(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-standing", task)
+
+    def test_without_the_deferral_the_same_failure_holds_the_tasks(self):
+        root = self.repo("deferred-standing")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.split("\n## Deferrals")[0])
+        result = self.check(["gate", "--task", "T013"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(self.G3.format(task="T013"), result.out.splitlines())
+        self.assertIn("G6 T013 #4: the latest record for the task is a failure", result.out.splitlines())
+
+    def test_a_deferral_that_needs_approval_holds_every_task_that_names_the_obligation(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                result, lines = self.lines("deferred-waiting", task)
+                self.assertEqual(result.code, 1, result)
+                self.assertIn(self.G12.format(task=task), lines)
+
+    def test_a_deferral_that_waits_does_not_stand_so_the_evidence_rules_still_apply(self):
+        _result, lines = self.lines("deferred-waiting", "T013")
+        self.assertIn(self.G3.format(task="T013"), lines)
+
+    def test_a_task_that_does_not_name_the_obligation_is_not_held_by_g12(self):
+        self.assert_passes("deferred-waiting", "T011")
+
+    def test_approval_releases_the_tasks(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-approved", task)
+
+    def test_approving_with_the_script_releases_the_tasks(self):
+        root = self.repo("deferred-waiting")
+        self.assertEqual(self.check(["gate", "--task", "T013"], root).code, 1)
+        approved = self.check(["approve", "--id", "DF-01", "--by", "A Person"], root)
+        self.assertEqual(approved.code, 0, approved)
+        self.assertEqual(self.check(["gate", "--task", "T013"], root).out, "gate T013: passed\n")
+        self.assertEqual(self.check(["gate", "--task", "T014"], root).out, "gate T014: passed\n")
+
+    def test_an_approved_deferral_holds_nothing_after_a_defect_failure_either(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-after-failure", task)
+
+    def test_a_later_passing_run_needs_no_deferral_and_the_tasks_pass(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-then-verified", task)
+
+    def test_a_standing_deferral_beside_an_environment_blocked_exception_holds_nothing(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-and-blocked-exception", task)
+
+    def test_gate_all_passes_when_every_task_is_complete(self):
+        result = self.gate("deferred-compliant", "--all")
+        self.assertEqual((result.code, result.out), (0, "gate: passed, 5 completed tasks\n"), result)
+
+
 if __name__ == "__main__":
     unittest.main()
