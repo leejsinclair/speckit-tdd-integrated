@@ -793,5 +793,21 @@ class WhenVerificationIsNotPossibleTests(unittest.TestCase):
                 self.assertNotIn(name, text.lower())
 
 
+class ReleaseVersionTests(unittest.TestCase):
+    """The release is 0.3.0 and the documents that name the version agree (T033)."""
+
+    def test_both_manifests_are_version_0_3_0(self):
+        for name in ("extension.yml", "preset.yml"):
+            self.assertEqual(version_of(read_repo(name)), "0.3.0", name)
+
+    def test_the_readme_names_the_0_3_0_tag_and_no_other(self):
+        text = read_repo("README.md")
+        self.assertIn("v0.3.0", text)
+        self.assertNotIn("v0.2.0", text)
+
+    def test_the_changelog_has_a_0_3_0_entry(self):
+        self.assertRegex(read_repo("CHANGELOG.md"), r"(?m)^### 0\.3\.0\n\n\S")
+
+
 if __name__ == "__main__":
     unittest.main()
