@@ -455,6 +455,42 @@ class BehaviourChecklistRulesTests(unittest.TestCase):
         self.assertIn("planned before", text)
 
 
+class ReviewingTheChecklistTests(unittest.TestCase):
+    def subsection(self):
+        text = read_repo(RULES_FILE)
+        start = text.index("\n### Reviewing the checklist\n")
+        end = text.index("\n## The Red, Green, Refactor cycle")
+        return flat(text[start:end])
+
+    def test_the_subsection_sits_inside_the_behaviour_checklist_section(self):
+        text = read_repo(RULES_FILE)
+        self.assertLess(text.index("\n## Behaviour checklist\n"), text.index("\n### Reviewing the checklist\n"))
+
+    def test_it_says_what_the_reviewer_compares_and_how(self):
+        found = self.subsection()
+        for phrase in (
+            "each scenario's quote against its items",
+            "every requirement is named",
+            "nothing goes beyond the specification",
+            "tdd_check.py status --scenarios",
+        ):
+            self.assertIn(phrase, found)
+
+    def test_it_sends_a_correction_through_the_specification_first(self):
+        found = self.subsection()
+        self.assertIn("a correction is made in `spec.md` or the Verification Plan first", found)
+        self.assertIn("and then carried into the checklist", found)
+
+    def test_it_says_review_is_asked_for_and_never_awaited(self):
+        found = self.subsection()
+        self.assertIn("asks for review and waits for no approval", found)
+
+    def test_the_plan_wrapper_completion_report_names_the_side_by_side_view(self):
+        _text, _above, below = wrapper_parts("plan")
+        report = flat(below[below.rindex("In the Completion Report") :])
+        self.assertIn("status --scenarios", report)
+
+
 GAP_PHRASE = "no `### Behaviour checklist` sub-heading"
 
 
