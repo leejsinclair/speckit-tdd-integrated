@@ -1217,7 +1217,9 @@ def validate_run(args, plan, feature_dir):
     """Check the run options against the plan and the task list. Returns the declared command."""
     command = next((item for item in plan.commands if item.id == args.command), None)
     if command is None:
-        raise UsageError(f"command '{args.command}' is not declared in the plan; nothing was recorded")
+        reason = ": the plan records no test tooling" if plan.no_tooling else ""
+        suffix = "; nothing was recorded"
+        raise UsageError(f"command '{args.command}' is not declared in the plan{reason}{suffix}")
     takes_selector = "{select}" in command.command
     if args.select is not None and not takes_selector:
         raise UsageError(f"command '{command.id}' has no {{select}}; nothing was recorded")
@@ -2050,10 +2052,20 @@ def gate_g2(task, feature):
     ]
 
 
+def deferred_standing(feature, obligation):
+    """The obligation is deferred and the deferral stands, so no rule demands a run for it.
+
+    While the plan records no test tooling, every obligation is.
+    """
+    return feature.plan.no_tooling
+
+
 def gate_g3(task, feature):
     """Each obligation on a test or behaviour task has a valid failing-first record, or an exception."""
     findings = []
     for obligation in task.obligations:
+        if deferred_standing(feature, obligation):
+            continue
         if latest_red(feature, obligation) is not None or replacing_exceptions(task, feature, obligation):
             continue
         blocked = covering_exceptions(task, feature, obligation)
@@ -2089,6 +2101,8 @@ def gate_g4(task, feature):
         return []
     findings = []
     for obligation in task.obligations:
+        if deferred_standing(feature, obligation):
+            continue
         subject = f"{task.id} {obligation}"
         red = latest_red(feature, obligation)
         exceptions = replacing_exceptions(task, feature, obligation)
@@ -2138,7 +2152,13 @@ def gate_g5(task, feature):
 
 def gate_g6(task, feature):
     """The task's latest record is not a failure, and none of its failure records is unclassified."""
-    mine = [record for record in feature.evidence.records if record.task == task.id]
+    # A failure that only concerns deferred obligations does not hold the task.
+    mine = [
+        record
+        for record in feature.evidence.records
+        if record.task == task.id
+        and not (record.obligations and all(deferred_standing(feature, ident) for ident in record.obligations))
+    ]
     findings = []
     if mine:
         latest = mine[-1]
@@ -2211,8 +2231,11 @@ def baseline_recorded(evidence):
 
 
 def gate_g11(task, feature):
-    """Once the baseline is recorded, the behaviour checklist still passes the checks that plan applies."""
-    if not baseline_recorded(feature.evidence) or not checklist_applies(feature.dir):
+    """Once the baseline is recorded, or while the plan records no test tooling, the checklist still passes.
+
+    With no test tooling there is no baseline to wait for: the state of the plan takes its place (research D2).
+    """
+    if not (baseline_recorded(feature.evidence) or feature.plan.no_tooling) or not checklist_applies(feature.dir):
         return []
     if not hasattr(feature, "_checklist_findings"):
         spec_text = read_text(os.path.join(feature.dir, SPEC_FILE))
