@@ -18,6 +18,8 @@ An existing constant with a test that asserts its value.
 - [ ] The plan has one obligation per requirement and per acceptance scenario and no more,
       at a single level, with no exemption and no exception that a larger change would not
       also need.
+- [ ] `tests/behaviour-checklist.md` has one item per acceptance scenario and per
+      requirement and no more, and `plan` exits 0 with it.
 - [ ] The existing test was changed to expect the new default as the first step, and the
       change is recorded as a failing-first run (the test fails against the old default
       with the expected text), not as an Expectation Change.

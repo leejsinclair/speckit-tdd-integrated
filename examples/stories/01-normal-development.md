@@ -31,7 +31,12 @@ Run `/speckit-specify`, `/speckit-clarify`, `/speckit-plan`, `/speckit-tasks`,
       exemption with a reason, and `tdd_check.py plan` exits 0.
 - [ ] Every task is labelled, and each obligation has a test task ahead of its behaviour
       task. `tdd_check.py tasks` exits 0.
-- [ ] `tdd-evidence.md` opens with a baseline record. Each obligation shows a valid `red`
+- [ ] The plan stage wrote `tests/behaviour-checklist.md`, with a section for each
+      acceptance scenario that quotes it word for word, every requirement and scenario named
+      by an item, and no item naming a file, function or class. `tdd_check.py plan` exits 0
+      with it.
+- [ ] `tests/tdd-evidence.md` opens with a baseline record, and a row for each behaviour
+      item is fixed at it. Each obligation shows a valid `red`
       record before a valid `green` record, both from real runs.
 - [ ] A broad `checkpoint` was recorded at the end of each phase and not after every change.
 - [ ] No approval request was made to the developer during routine cycles.

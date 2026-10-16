@@ -24,5 +24,8 @@ passing.
       the developer is asked to approve it. The approval is recorded only after the
       developer has given it.
 - [ ] Until the approval is recorded, `gate --task` fails with G8 for the task.
+- [ ] Weakening a behaviour item's outcome after the baseline is held too: `gate --task`
+      fails with G10 for the tasks that verify the item until the change is recorded with
+      `expectation --item`, and until it is approved where it alters intended behaviour.
 - [ ] The final report names the existing test file that was changed, with its reason.
 - [ ] `compliance` prints `COMPLIANT`.
