@@ -353,3 +353,9 @@ to scenarios 3 to 6 and 8 and do not replace them.
 - **Date**: 2026-10-16. The project owner read the spec and behaviour checklist of every set: `examples/runs/compliant`, `examples/runs/frontend-planned`, the cart-total project of T017 to T046, and the Haiku runs of stories 01, 07 and 08. Reported verbatim in substance: the documents "look good". No omission, weakened outcome, duplicate or code-level wording was reported.
 - **T049 (SC-009)** and the reviewer's notes of **T056** are taken as met by this review.
 - **Still open, because they need a time**: T033 (judge a checklist against its spec in under ten minutes, SC-004), T046 (name the requirements and tests of three random items in under two minutes each, SC-003) and T057 (a new developer answers four questions in under five minutes, SC-008). Three items of the T046 project were picked at random for the owner to answer: BI-006, BI-001 and BI-002.
+
+### T033: time to judge a checklist against its specification (SC-004)
+
+- **Date**: 2026-10-16. The project owner, who took no part in writing the checklists, checked each checklist against its specification in **about 5 minutes per document**, against the 10 minute limit, and found no omission or excess.
+- **Limit of this evidence**: the documents were small (4 to 9 items, 3 to 7 scenarios). SC-004 speaks of a representative feature of 10 to 20 requirements, so this shows the check is quick on small features and does not show the same for the size the criterion names.
+- **Not asked or not answered**: whether the owner could name each item's requirement without the plan or the task list (US3 scenario 1). It is recorded as not separately tested.
