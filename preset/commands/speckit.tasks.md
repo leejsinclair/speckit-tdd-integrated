@@ -28,7 +28,12 @@ strategy: wrap
 >   before: generate and check the task list against the Verification Plan, with no
 >   checklist rule applied. Do not describe the feature's behaviour as covered by a
 >   checklist.
-> - **Otherwise** test tasks are not optional. This overrides the statement below that
+> - **Otherwise** run the `plan` check first, from the repository root:
+>   `python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py plan`.
+>   If it exits non-zero, stop: do not generate tasks while the plan check fails, because
+>   tasks written over a failing plan inherit its gaps. Report the findings, name
+>   `__SPECKIT_COMMAND_PLAN__` as the stage that corrects them, and generate nothing.
+> - **Otherwise**, with the plan check passing, test tasks are not optional. This overrides the statement below that
 >   "Tests are OPTIONAL" and every instruction to generate test tasks only on request:
 >   every obligation in the Verification Plan gets a test task, placed before the task
 >   that delivers the behaviour, as "Verification labels and order" at the end of this

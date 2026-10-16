@@ -74,6 +74,15 @@ interpretation. Plan nothing for that requirement until it is answered: leave it
 an obligation, so that the plan check fails and the plan is not reported complete. Record
 the answer in the specification's Clarifications, then write the obligation (FR-015).
 
+**A requirement that existing behaviour stays unchanged.** When a requirement states that
+existing behaviour stays unchanged and the change gives no way to vary that behaviour,
+there is nothing a test can observe: any test would only restate how the language works.
+Do not leave it uncovered and do not put it to the developer as an ambiguity. Exempt it
+with the reason "unchanged by construction: the change gives no way to vary it", give it a
+behaviour item whose *Verified by* is that exemption, and say so in the Completion Report so
+the developer can overrule it. Where the change does add a way to vary the behaviour, it is
+an ordinary requirement and gets an obligation.
+
 **Verification commands.** Take the commands only from what the project already defines:
 its package scripts, Makefile, CI configuration or contributor documentation (FR-049).
 Record where each one is defined. When the project has no runnable test command, say so
