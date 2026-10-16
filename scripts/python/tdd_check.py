@@ -360,7 +360,7 @@ def parse_spec(text):
         elif in_scenarios and stripped and current is not None:
             scenario_text[current] += "\n" + stripped
     return Item(
-        fr_ids=unique(fr_ids), sc_ids=unique(sc_ids), scenario_ids=scenario_ids, scenario_text=scenario_text
+        fr_ids=unique(fr_ids), sc_ids=unique(sc_ids), scenario_ids=scenario_ids, scenario_text=scenario_text, text=text
     )
 
 
@@ -1530,16 +1530,211 @@ def verdict(name, findings):
 
 def cmd_plan(args, root, feature_dir):
     spec = parse_spec(require_text(feature_dir, SPEC_FILE))
-    findings = check_plan(spec, load_plan(feature_dir))
+    plan = load_plan(feature_dir)
+    findings = check_plan(spec, plan) + checklist_plan_findings(feature_dir, spec, plan)
     code, lines = verdict("plan", findings)
     return code, findings, lines, None
 
 
 def cmd_tasks(args, root, feature_dir):
     tasks = parse_tasks(require_text(feature_dir, TASKS_FILE))
-    findings = check_tasks(load_plan(feature_dir), tasks)
+    plan = load_plan(feature_dir)
+    findings = check_tasks(plan, tasks) + checklist_task_findings(feature_dir, plan, tasks)
     code, lines = verdict("tasks", findings)
     return code, findings, lines, None
+
+
+# ---------------------------------------------------------------------------
+# Checklist rules CHECKLIST and B1 to B7 (contracts/behaviour-checklist.md section 4)
+# ---------------------------------------------------------------------------
+
+CHECKLIST_REL = CHECKLIST_DIR + "/" + CHECKLIST_FILE
+PATH_EXTENSIONS = (
+    "c cc cpp cs css go h html java js json jsx kt md php py rb rs scss sh sql swift toml ts tsx vue xml yaml yml"
+).split()
+PATH_SHAPE = re.compile(r"\S/\S|\S\.(?:" + "|".join(PATH_EXTENSIONS) + r")$")
+LOWER_CAMEL = re.compile(r"^[a-z]\w*[A-Z]")
+EDGE_CASE_PREFIX = "EC-"
+NO_ITEM_REASON = "no behaviour item expresses it"
+
+
+def read_checklist(feature_dir):
+    """The checklist's text, or None when it does not exist or cannot be read."""
+    try:
+        return read_text(os.path.join(feature_dir, CHECKLIST_DIR, CHECKLIST_FILE))
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def occurs(token, text):
+    """Whether ``token`` occurs in ``text`` as a whole word, compared case-sensitively."""
+    return re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", text) is not None
+
+
+def clause_tokens(text):
+    """The tokens of a clause with whether each was written in backticks (contract section 5)."""
+    found = []
+    for raw in text.split():
+        token = re.sub(r"^[^\w/()]+|[^\w/()]+$", "", raw.replace("`", ""))
+        if token:
+            found.append((token, "`" in raw))
+    return found
+
+
+def is_code_shaped(token, ticked):
+    return (
+        ticked
+        or "_" in token
+        or "::" in token
+        or "->" in token
+        or token.endswith("()")
+        or LOWER_CAMEL.match(token) is not None
+    )
+
+
+def rule_b1(spec, items):
+    named = {ident for item in items for ident in item.expresses}
+    return [Finding("B1", ident, NO_ITEM_REASON) for ident in spec.fr_ids + spec.scenario_ids if ident not in named]
+
+
+def rule_b2(plan, items):
+    obligations = {obligation.id for obligation in plan.obligations}
+    exempted = {exemption.requirement for exemption in plan.exemptions}
+    findings = []
+    for item in items:
+        if not item.verified_by:
+            findings.append(Finding("B2", item.id, "Verified by is empty"))
+        for entry in item.verified_by:
+            if OBLIGATION_ID.match(entry):
+                if entry not in obligations:
+                    findings.append(Finding("B2", item.id, f"{entry} is not in the Verification obligations table"))
+            elif entry.startswith("exemption "):
+                ident = entry[len("exemption ") :].strip()
+                if ident not in exempted:
+                    reason = f"exemption {ident} is not a row of the Verification exemptions table"
+                    findings.append(Finding("B2", item.id, reason))
+            else:
+                findings.append(Finding("B2", item.id, f"{entry} is neither a VO- id nor 'exemption <id>'"))
+    return findings
+
+
+def rule_b3(plan, items):
+    named = {entry for item in items for entry in item.verified_by}
+    return [
+        Finding("B3", obligation.id, "no behaviour item names it in Verified by")
+        for obligation in plan.obligations
+        if obligation.id not in named
+    ]
+
+
+def rule_b5(items, spec, design):
+    findings = []
+    for item in items:
+        flagged = []
+        for _keyword, words in item.clauses:
+            for token, ticked in clause_tokens(words):
+                if token in flagged or occurs(token, spec.text):
+                    continue
+                if PATH_SHAPE.search(token):
+                    flagged.append(token)
+                    reason = f"`{token}` is a path-shaped token that spec.md does not name"
+                    findings.append(Finding("B5", item.id, reason))
+                elif is_code_shaped(token, ticked) and occurs(token, design):
+                    flagged.append(token)
+                    reason = f"`{token}` is a code-shaped token that plan.md or tasks.md names and spec.md does not"
+                    findings.append(Finding("B5", item.id, reason))
+    return findings
+
+
+def expresses_problem(ident, spec):
+    """Why an Expresses id is not acceptable, or None."""
+    if ident.startswith(("FR-", "SC-")):
+        known = spec.fr_ids if ident.startswith("FR-") else spec.sc_ids
+        return None if ident in known else f"Expresses {ident}, which spec.md does not hold"
+    if SCENARIO_ID.match(ident):
+        return None if ident in spec.scenario_ids else f"Expresses {ident}, which spec.md does not hold"
+    if ident.startswith(EDGE_CASE_PREFIX):
+        return None if occurs(ident, spec.text) else f"Expresses {ident}, which spec.md does not hold"
+    return f"Expresses {ident}, which has no recognised prefix (FR-, SC-, USn-ASm or EC-)"
+
+
+def rule_b6(checklist, spec):
+    findings = []
+    seen = set()
+    for section in checklist.sections:
+        if section.kind == "scenario":
+            scenario = section.heading
+            if scenario not in spec.scenario_ids:
+                findings.append(Finding("B6", scenario, "the scenario is not in spec.md"))
+            elif scenario in seen:
+                findings.append(Finding("B6", scenario, "the scenario has more than one section"))
+            seen.add(scenario)
+            if scenario in spec.scenario_ids:
+                if not section.quote.strip():
+                    findings.append(Finding("B6", scenario, "the section has no quote"))
+                elif normalise(section.quote) != normalise(spec.scenario_text[scenario]):
+                    findings.append(Finding("B6", scenario, "the quote differs from the scenario text in spec.md"))
+        for item in section.items:
+            for ident in item.expresses:
+                problem = expresses_problem(ident, spec)
+                if problem:
+                    findings.append(Finding("B6", item.id, problem))
+            named = [ident for ident in item.expresses if SCENARIO_ID.match(ident)]
+            if section.kind == "scenario":
+                if section.heading not in named:
+                    reason = f"the item is in section {section.heading} and does not name {section.heading}"
+                    findings.append(Finding("B6", item.id, reason))
+                for other in named:
+                    if other != section.heading:
+                        findings.append(
+                            Finding("B6", item.id, f"the item is in section {section.heading} and names {other}")
+                        )
+            else:
+                for other in named:
+                    findings.append(Finding("B6", item.id, f"the item is in {OTHER_HEADING} and names {other}"))
+    for item in checklist.items:
+        if item.section is None:
+            for ident in item.expresses:
+                problem = expresses_problem(ident, spec)
+                if problem:
+                    findings.append(Finding("B6", item.id, problem))
+    return findings
+
+
+def checklist_plan_findings(feature_dir, spec, plan):
+    """CHECKLIST and B1 to B6, when the checklist rules apply to the feature."""
+    if not plan.has_section or not checklist_applies(feature_dir):
+        return []
+    text = read_checklist(feature_dir)
+    if text is None:
+        return [Finding("CHECKLIST", CHECKLIST_REL, "the file does not exist or cannot be read")]
+    checklist = parse_checklist(text)
+    items = checklist.items
+    try:
+        design = (read_text(os.path.join(feature_dir, PLAN_FILE)) or "") + "\n"
+        design += read_text(os.path.join(feature_dir, TASKS_FILE)) or ""
+    except (OSError, UnicodeDecodeError):
+        design = ""
+    findings = rule_b1(spec, items) + rule_b2(plan, items) + rule_b3(plan, items)
+    findings.extend(checklist.findings)
+    findings.extend(rule_b5(items, spec, design))
+    findings.extend(rule_b6(checklist, spec))
+    return findings
+
+
+def checklist_task_findings(feature_dir, plan, tasks):
+    """CHECKLIST and B7, when the checklist rules apply to the feature."""
+    if not plan.has_section or not checklist_applies(feature_dir):
+        return []
+    text = read_checklist(feature_dir)
+    if text is None:
+        return [Finding("CHECKLIST", CHECKLIST_REL, "the file does not exist or cannot be read")]
+    named = {entry for item in parse_checklist(text).items for entry in item.verified_by}
+    return [
+        Finding("B7", task.id, "names only obligations that no behaviour item names")
+        for task in tasks
+        if task.kind == "test" and task.obligations and not any(ident in named for ident in task.obligations)
+    ]
 
 
 # ---------------------------------------------------------------------------
