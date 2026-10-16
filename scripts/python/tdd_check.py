@@ -131,6 +131,10 @@ EXEMPTIONS_HEADING = "### Verification exemptions"
 COMMANDS_HEADER = ["ID", "Command", "Scope", "Source"]
 OBLIGATIONS_HEADER = ["ID", "Requirements", "Scenario", "Expected outcome", "Level", "Origin"]
 EXEMPTIONS_HEADER = ["Requirement", "Reason", "Alternative verification"]
+MANUAL_HEADING = "### Manual verification"
+MANUAL_HEADER = ["ID", "Covers", "Steps", "Expected result", "Why not automated"]
+# The ID of the one row that says a table has nothing to list: no test tooling, or no manual checks.
+NONE_ROW = "None"
 
 BASELINE_HEADING = "## Baseline"
 RECORDS_HEADING = "## Test execution records"
@@ -191,8 +195,15 @@ ITEM_CHANGES_HEADER = [
     "New fingerprint",
 ]
 DECISIONS_HEADER = ["ID", "Opened", "Question", "Tasks", "Status", "Answer", "Decided by", "Resolved"]
+DEFERRALS_HEADING = "## Deferrals"
+MANUAL_RESULTS_HEADING = "## Manual results"
+DEFERRALS_HEADER = ["ID", "Time", "Obligations", "Reason", "Basis", "Needs approval", "Approved by", "Check"]
+MANUAL_RESULTS_HEADER = ["ID", "Time", "Check", "Result", "Recorded by", "Note", "Check value"]
+MANUAL_RESULT_VALUES = ("pass", "fail")
 # The record cells the check value is not computed over.
 UNCHAINED_CELLS = ("Classification", "Note", "Check")
+UNCHAINED_DEFERRAL_CELLS = ("Approved by", "Check")
+UNCHAINED_MANUAL_RESULT_CELLS = ("Note", "Check value")
 
 COMMAND_ID = re.compile(r"^[a-z0-9-]+$")
 OBLIGATION_ID = re.compile(r"^VO-\d{3,}$")
@@ -382,8 +393,9 @@ def parse_plan(text):
     """Read the Verification Plan section of plan.md with the element rules of the contract."""
     findings = []
     plan = Item(
-        has_section=False, has_checklist_marker=False, commands=[], obligations=[], exemptions=[], findings=findings
-    )
+        has_section=False, has_checklist_marker=False, commands=[], obligations=[], exemptions=[], findings=findings,
+        no_tooling=False, manual_checks=[],
+    )  # fmt: skip
     section = verification_plan_section(text)
     if section is None:
         findings.append(
@@ -396,6 +408,10 @@ def parse_plan(text):
     seen = set()
     for row in read_table(section, COMMANDS_HEADING, COMMANDS_HEADER, "PLAN", PLAN_FILE, findings):
         ident = row["ID"]
+        if ident == NONE_ROW:
+            # No way to run tests is recorded, not a command. Beside a command it is both, for a rule to report.
+            plan.no_tooling = True
+            continue
         if not COMMAND_ID.match(ident):
             findings.append(Finding("PLAN", ident, "command id must be lowercase letters, digits and hyphens"))
         if ident in seen:
@@ -442,6 +458,21 @@ def parse_plan(text):
                 alternative=undash(row["Alternative verification"]),
             )
         )
+
+    # The sub-heading is optional: a plan written before it existed has no manual checks.
+    if any(line.rstrip() == MANUAL_HEADING for line in section.splitlines()):
+        for row in read_table(section, MANUAL_HEADING, MANUAL_HEADER, "PLAN", PLAN_FILE, findings):
+            if row["ID"] == NONE_ROW:
+                continue
+            plan.manual_checks.append(
+                Item(
+                    id=row["ID"],
+                    covers=split_list(row["Covers"]),
+                    steps=undash(row["Steps"]),
+                    expected=undash(row["Expected result"]),
+                    why=undash(row["Why not automated"]),
+                )
+            )
     return plan
 
 
@@ -540,7 +571,7 @@ def parse_evidence(text, name=EVIDENCE_FILE):
     findings = []
     evidence = Item(
         baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=findings, name=name,
-        item_baseline=[], item_changes=[],
+        item_baseline=[], item_changes=[], deferrals=[], manual_results=[],
     )  # fmt: skip
 
     for row in read_table(text, BASELINE_HEADING, BASELINE_HEADER, "EVIDENCE", name, findings):
@@ -635,6 +666,38 @@ def parse_evidence(text, name=EVIDENCE_FILE):
                     alters_behaviour=yes_no(row["Alters behaviour"], "Alters behaviour", row["ID"], findings),
                     approved_by=undash(row["Approved by"]),
                     new_fingerprint=undash(row["New fingerprint"]),
+                    cells=row,
+                )
+            )
+
+    # The deferral and manual result tables are written on first use; absent reads as empty.
+    if DEFERRALS_HEADING in text.splitlines():
+        for row in read_table(text, DEFERRALS_HEADING, DEFERRALS_HEADER, "EVIDENCE", name, findings):
+            evidence.deferrals.append(
+                Item(
+                    id=row["ID"],
+                    time=row["Time"],
+                    obligations=split_list(row["Obligations"]),
+                    reason=undash(row["Reason"]),
+                    basis=row["Basis"],
+                    needs_approval=yes_no(row["Needs approval"], "Needs approval", row["ID"], findings),
+                    approved_by=undash(row["Approved by"]),
+                    check=row["Check"],
+                    cells=row,
+                )
+            )
+    if MANUAL_RESULTS_HEADING in text.splitlines():
+        for row in read_table(text, MANUAL_RESULTS_HEADING, MANUAL_RESULTS_HEADER, "EVIDENCE", name, findings):
+            check_enum(row["Result"], MANUAL_RESULT_VALUES, "result", "EVIDENCE", row["ID"], findings)
+            evidence.manual_results.append(
+                Item(
+                    id=row["ID"],
+                    time=row["Time"],
+                    check=row["Check"],
+                    result=row["Result"],
+                    recorded_by=row["Recorded by"],
+                    note=undash(row["Note"]),
+                    check_value=row["Check value"],
                     cells=row,
                 )
             )
@@ -890,10 +953,45 @@ def fingerprint(files, root):
     return digest.hexdigest()[:6]
 
 
-def check_value(previous, cells):
-    """Short hash of a record row's cells, chained from the previous row's check value."""
-    chained = [cells[name] for name in RECORDS_HEADER if name not in UNCHAINED_CELLS]
+def chain_value(previous, cells, header, unchained):
+    """Short hash of a row's chained cells, chained from the previous row's check value."""
+    chained = [cells[name] for name in header if name not in unchained]
     return hashlib.sha256((previous + "\n" + "|".join(chained)).encode("utf-8")).hexdigest()[:6]
+
+
+def check_value(previous, cells):
+    """The check value of a record row."""
+    return chain_value(previous, cells, RECORDS_HEADER, UNCHAINED_CELLS)
+
+
+def deferral_check_value(previous, cells):
+    """The check value of a deferral row, in the chain of the Deferrals table."""
+    return chain_value(previous, cells, DEFERRALS_HEADER, UNCHAINED_DEFERRAL_CELLS)
+
+
+def manual_result_check_value(previous, cells):
+    """The check value of a manual result row, in the chain of the Manual results table."""
+    return chain_value(previous, cells, MANUAL_RESULTS_HEADER, UNCHAINED_MANUAL_RESULT_CELLS)
+
+
+def chain_breaks(rows, value_of, stored_of):
+    """The ids of the rows whose stored check value is not the one computed from the row and its predecessor."""
+    broken = []
+    previous = ""
+    for row in rows:
+        stored = stored_of(row)
+        if stored != value_of(previous, row.cells):
+            broken.append(row.id)
+        previous = stored
+    return broken
+
+
+def deferral_chain_breaks(evidence):
+    return chain_breaks(evidence.deferrals, deferral_check_value, lambda row: row.check)
+
+
+def manual_result_chain_breaks(evidence):
+    return chain_breaks(evidence.manual_results, manual_result_check_value, lambda row: row.check_value)
 
 
 def evidence_name(feature_dir):
@@ -913,7 +1011,7 @@ def empty_evidence(path=TESTS_EVIDENCE_FILE):
     """Evidence with no document yet: findings name it as 0.1.0 did, and the first write goes to ``path``."""
     return Item(
         baseline=[], records=[], exceptions=[], expectations=[], decisions=[], findings=[], text=None,
-        name=EVIDENCE_FILE, path=path, item_baseline=[], item_changes=[],
+        name=EVIDENCE_FILE, path=path, item_baseline=[], item_changes=[], deferrals=[], manual_results=[],
     )  # fmt: skip
 
 
@@ -1003,6 +1101,16 @@ def render_evidence(feature_dir, evidence, now):
             + ITEM_CHANGES_HEADING + "\n\n"
             + render_table(ITEM_CHANGES_HEADER, [item.cells for item in evidence.item_changes])
         )  # fmt: skip
+    # The deferral and manual result tables are written only when they hold rows (research D10).
+    if evidence.deferrals:
+        tables += (
+            "\n" + DEFERRALS_HEADING + "\n\n" + render_table(DEFERRALS_HEADER, [i.cells for i in evidence.deferrals])
+        )
+    if evidence.manual_results:
+        tables += (
+            "\n" + MANUAL_RESULTS_HEADING + "\n\n"
+            + render_table(MANUAL_RESULTS_HEADER, [item.cells for item in evidence.manual_results])
+        )  # fmt: skip
     # The Summary is derived from the tables as they are about to be written.
     body = summary_body(feature_dir, parse_evidence(tables))
     summary = f"_Generated from the tables below on {now}._\n" + ("\n" + body if body else "")
@@ -1089,9 +1197,7 @@ def find_task(tasks, ident):
 def require_plan(feature_dir):
     plan = load_plan(feature_dir)
     if not plan.has_section:
-        raise UsageError(
-            f"{PLAN_FILE} has no Verification Plan: the feature is not under the process"
-        )
+        raise UsageError(f"{PLAN_FILE} has no Verification Plan: the feature is not under the process")
     return plan
 
 
@@ -1539,9 +1645,7 @@ def check_plan(spec, plan):
         return list(plan.findings)
     findings = list(plan.findings)
     if not plan.commands and not any(COMMANDS_HEADING in finding.reason for finding in findings):
-        findings.append(
-            Finding("PLAN", PLAN_FILE, "no verification command is declared: a gap to resolve in planning")
-        )
+        findings.append(Finding("PLAN", PLAN_FILE, "no verification command is declared: a gap to resolve in planning"))
     for obligation in plan.obligations:
         if not obligation.requirements:
             findings.append(Finding("PLAN", obligation.id, "names no requirement"))
@@ -2784,8 +2888,7 @@ def completion_refusal(failing, findings):
         "  2. Record an exception with a rationale, where the cycle does not fit this work:\n"
         f"       python3 {SCRIPT_INSTALL_PATH} exception --task {first} --kind <kind> "
         '--rationale "<why>" --alternative "<how it is verified instead>"\n'
-        f"Check a task before marking it: python3 {SCRIPT_INSTALL_PATH} gate --task {first}\n"
-        + item_routes(findings)
+        f"Check a task before marking it: python3 {SCRIPT_INSTALL_PATH} gate --task {first}\n" + item_routes(findings)
     )
 
 

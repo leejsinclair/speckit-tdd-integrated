@@ -541,7 +541,7 @@ class NoToolingParseTests(unittest.TestCase):
         self.assertEqual(plan.commands, [])
 
     def test_a_lowercase_none_is_still_a_command_id(self):
-        text = fixture_text("valid-minimal", "plan.md").replace("| unit |", "| none |")
+        text = fixture_text("valid-minimal", "plan.md").replace("| unit | `sh", "| none | `sh")
         plan = parser_function("parse_plan")(text)
         self.assertFalse(plan.no_tooling)
         self.assertEqual([command.id for command in plan.commands], ["none", "suite"])
