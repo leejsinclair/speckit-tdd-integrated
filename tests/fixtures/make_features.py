@@ -1720,7 +1720,7 @@ def _compliance_c8_rule_fails():
     removal = bx("BX-01", "BI-003", "removed", requirements="FR-003")
     lines = [line for line in VERIFIED_ITEM_LINES if "BI-003" not in line]
     return compliant_items(items=[CL_ITEM_1, CL_ITEM_2, CL_ITEM_4], changes=[removal],
-                           summary_text=item_summary(lines, changes="BX-01 BI-003 (recorded)"))  # fmt: skip
+                           summary_text=item_summary(lines, changes="BX-01 on BI-003, removed (recorded)"))  # fmt: skip
 
 
 @case("compliance-c8-unrecorded-change")

@@ -375,5 +375,161 @@ class ScenariosViewTests(RepoCase):
         self.assertIn("cannot read tests/behaviour-checklist.md", result.err)
 
 
+ITEM_HEADER = [
+    "| Behaviour item | Scenario | Obligations | Status | Tests |",
+    "|----------------|----------|-------------|--------|-------|",
+]
+ITEM_NONE = "**Item changes**: none."
+
+
+def item_view(row_1, row_2, items, unverified, extra_unverified=(), middle=NONE_LINE, changes=ITEM_NONE,
+              failures=NO_FAILURES):  # fmt: skip
+    """The Review Evidence view of a feature with a behaviour checklist, built from its parts."""
+    rows = [f"| VO-001 | {REQS_1} | {row_1} |", f"| VO-002 | {REQS_2} | {row_2} |"]
+    line = unverified[:-1] + "".join(", " + entry for entry in extra_unverified) + "."
+    lines = HEADER + rows + [""] + ITEM_HEADER + [f"| {entry} |" for entry in items]
+    return "\n".join(lines + ["", line, "", middle, "", changes, "", failures]) + "\n"
+
+
+class ItemViewTests(RepoCase):
+    def status(self, case, *args):
+        return self.check(["status", *args], self.repo(case))
+
+    def assert_view(self, case, expected):
+        result = self.status(case)
+        self.assertEqual((result.code, result.err), (0, ""))
+        self.assertEqual(result.out, expected)
+
+    def test_every_item_verified(self):
+        self.assert_view(
+            "items-status-verified",
+            item_view(
+                "verified | assert, pass | pass (#3)", "verified | assert, pass | pass (#5)",
+                ["BI-001 | US1-AS1 | VO-001 | verified | assert, pass",
+                 "BI-002 | US1-AS2 | VO-002 | verified | assert, pass",
+                 "BI-003 | - | exemption FR-003 | exempt | -",
+                 "BI-004 | - | VO-002 | verified | assert, pass",
+                 "BI-005 | - | VO-001, VO-002 | verified | assert, pass"],
+                not_verified(),
+            ),
+        )  # fmt: skip
+
+    def test_one_obligation_verified_and_one_planned_leaves_no_item_verified_that_names_both(self):
+        self.assert_view(
+            "items-status-partial",
+            item_view(
+                "verified | assert, pass | pass (#3)", "planned | - | -",
+                ["BI-001 | US1-AS1 | VO-001 | verified | assert, pass",
+                 "BI-002 | US1-AS2 | VO-002 | planned | -",
+                 "BI-003 | - | exemption FR-003 | exempt | -",
+                 "BI-004 | - | VO-002 | planned | -",
+                 "BI-005 | - | VO-001, VO-002 | in progress | assert, pass"],
+                not_verified((2, "planned")),
+                ["BI-002 (planned)", "BI-004 (planned)", "BI-005 (in progress)"],
+            ),
+        )  # fmt: skip
+
+    def test_an_item_that_names_exemptions_only_is_exempt_and_the_rest_are_planned(self):
+        result = self.status("items-status-exempt")
+        lines = result.out.splitlines()
+        self.assertIn("| BI-003 | - | exemption FR-003 | exempt | - |", lines)
+        self.assertIn("| BI-001 | US1-AS1 | VO-001 | planned | - |", lines)
+        self.assertNotIn("BI-003 (", result.out.split("**Not verified**")[1].split("\n")[0])
+
+    def test_a_failed_obligation_fails_every_item_that_names_it(self):
+        self.assert_view(
+            "items-status-failed",
+            item_view(
+                "failed | assert | fail (#3)", "planned | - | -",
+                ["BI-001 | US1-AS1 | VO-001 | failed | assert",
+                 "BI-002 | US1-AS2 | VO-002 | planned | -",
+                 "BI-003 | - | exemption FR-003 | exempt | -",
+                 "BI-004 | - | VO-002 | planned | -",
+                 "BI-005 | - | VO-001, VO-002 | failed | assert"],
+                not_verified((1, "failed"), (2, "planned")),
+                ["BI-001 (failed)", "BI-002 (planned)", "BI-004 (planned)", "BI-005 (failed)"],
+            ),
+        )  # fmt: skip
+
+    def test_a_blocked_obligation_blocks_every_item_that_names_it(self):
+        self.assert_view(
+            "items-status-blocked",
+            item_view(
+                "verified | assert, pass | pass (#3)", "blocked | assert | fail (#4)",
+                ["BI-001 | US1-AS1 | VO-001 | verified | assert, pass",
+                 "BI-002 | US1-AS2 | VO-002 | blocked | assert",
+                 "BI-003 | - | exemption FR-003 | exempt | -",
+                 "BI-004 | - | VO-002 | blocked | assert",
+                 "BI-005 | - | VO-001, VO-002 | blocked | assert, pass"],
+                not_verified((2, "blocked")),
+                ["BI-002 (blocked)", "BI-004 (blocked)", "BI-005 (blocked)"],
+                "**Open decisions**: DN-01 holds T014 (Should an empty cart raise or return zero?). "
+                "**Exceptions**: none. **Expectation changes**: none.",
+            ),
+        )  # fmt: skip
+
+    def test_an_item_with_obligations_and_an_exemption_is_judged_on_the_obligations(self):
+        result = self.status("items-status-mixed-exemption")
+        self.assertIn(
+            "| BI-006 | - | VO-001, exemption FR-003 | verified | assert, pass |", result.out.splitlines()
+        )
+
+    def test_no_item_is_verified_while_an_obligation_it_names_is_not(self):
+        for case in ("items-status-partial", "items-status-failed", "items-status-blocked", "items-status-exempt"):
+            with self.subTest(case=case):
+                rows = [line for line in self.status(case).out.splitlines() if line.startswith("| BI-005 |")]
+                self.assertEqual(len(rows), 1)
+                self.assertNotIn("| verified |", rows[0])
+
+    def test_item_changes_are_listed_with_their_state(self):
+        expected = {
+            "items-baseline": "**Item changes**: none.",
+            "item-changed": "**Item changes**: BI-002 changed, not recorded.",
+            "item-removed": "**Item changes**: BI-004 removed, not recorded.",
+            "item-change-recorded": "**Item changes**: BX-01 on BI-002 (recorded).",
+            "item-change-awaiting-approval": "**Item changes**: BX-01 on BI-002, alters behaviour (awaiting approval).",
+            "item-change-approved": (
+                "**Item changes**: BX-01 on BI-002, alters behaviour (approved by Lee Sinclair)."
+            ),
+            "item-removal-recorded": "**Item changes**: BX-01 on BI-004, removed (recorded).",
+            "item-id-reused": "**Item changes**: BX-01 on BI-004, removed (recorded); BI-004 id reused.",
+        }
+        for case, line in expected.items():
+            with self.subTest(case=case):
+                self.assertIn(line, self.status(case).out.splitlines())
+
+    def test_json_carries_items_and_item_changes(self):
+        data = json.loads(self.status("item-change-recorded", "--json").out)
+        statuses = {item["id"]: item["status"] for item in data["items"]}
+        expected = {"BI-001": "verified", "BI-002": "verified", "BI-003": "exempt", "BI-004": "verified"}
+        self.assertEqual(statuses, expected)
+        self.assertEqual(data["items"][0]["obligations"], ["VO-001"])
+        self.assertEqual(data["items"][0]["scenario"], "US1-AS1")
+        self.assertEqual(
+            [(change["id"], change["item"], change["state"]) for change in data["item_changes"]],
+            [("BX-01", "BI-002", "recorded")],
+        )
+
+    def test_scenarios_view_shows_each_items_status_once_items_are_fixed(self):
+        out = self.status("items-status-partial", "--scenarios").out
+        self.assertIn("  BI-001 | Expresses: FR-001, US1-AS1 | Verified by: VO-001 | Status: verified\n", out)
+        self.assertIn("  BI-002 | Expresses: FR-002, US1-AS2, SC-001 | Verified by: VO-002 | Status: planned\n", out)
+        self.assertIn("Status: in progress\n", out)
+        self.assertIn("Status: exempt\n", out)
+
+    def test_the_summary_written_by_run_holds_the_same_table(self):
+        root = self.repo("items-baseline")
+        result = self.check(["run", "--phase", "checkpoint", "--command", "suite"], root)
+        self.assertEqual(result.code, 0, result)
+        stored = summary_body(read(self.feature(root), "tdd-evidence.md"))
+        self.assertEqual(stored, self.check(["status"], root).out)
+        self.assertIn("| Behaviour item | Scenario | Obligations | Status | Tests |", stored)
+
+    def test_an_older_feature_has_no_item_table(self):
+        out = self.status("status-verified").out
+        self.assertNotIn("Behaviour item", out)
+        self.assertNotIn("Item changes", out)
+
+
 if __name__ == "__main__":
     unittest.main()
