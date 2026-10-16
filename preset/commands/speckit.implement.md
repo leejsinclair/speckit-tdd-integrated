@@ -21,12 +21,17 @@ strategy: wrap
 >   name `__SPECKIT_COMMAND_PLAN__` as the way to bring the feature under the process, and
 >   then carry on as core Spec Kit would. Record no evidence, run no check, and never
 >   describe the feature's work as verified.
+> - **If `plan.md` has a Verification Plan with no `### Behaviour checklist` sub-heading
+>   and the feature has no `tests/behaviour-checklist.md`**, the feature was planned before
+>   the behaviour checklist existed. State this gap now and again in the Completion Report,
+>   name `__SPECKIT_COMMAND_PLAN__` as the way to add the checklist, and carry on as
+>   before: no checklist rule applies to it, and its evidence stays where it is.
 > - **Otherwise** every task is completed through the cycle in "Test-driven
 >   implementation" at the end of this command, which applies throughout "Execute
 >   implementation" below. A task is marked `[X]` only after its gate passes: the edit that
 >   marks it is refused until then. A refusal is a result to act on, not an obstacle to
->   get round: never mark a task by any other means, and never edit `tdd-evidence.md`,
->   which only the check script writes.
+>   get round: never mark a task by any other means, and never edit `tdd-evidence.md`
+>   or `tests/tdd-evidence.md`, which only the check script writes.
 
 {CORE_TEMPLATE}
 
@@ -50,7 +55,11 @@ this stage comes from `CHECK run`.
    ```
 
    If `plan` or `tasks` exits non-zero, stop and report the findings: the plan or the task
-   list must be corrected by its own stage first. If the baseline fails, name the tests
+   list must be corrected by its own stage first. `plan` also covers the behaviour
+   checklist, and the baseline is refused while the checklist fails, so a refusal means
+   returning to the plan stage: the checklist is corrected there and not here. The baseline
+   is written to `tests/tdd-evidence.md`, or to `tdd-evidence.md` where the feature
+   already keeps its evidence there. If the baseline fails, name the tests
    that were already failing with `--note`; they are pre-existing and are kept apart from
    failures this work introduces.
 
@@ -195,10 +204,11 @@ In the Completion Report, in addition to what the core command asks for:
 - State that passing tests do not stand in for linting, static analysis, security checks
   or any other validation the project requires: those are run and reported as the project
   already requires.
-- Point the reviewer to `tdd-evidence.md` in the feature directory.
+- Point the reviewer to the evidence document at its resolved location: `tests/tdd-evidence.md`,
+  or `tdd-evidence.md` where the feature keeps it at the top of the feature directory.
 
 Do not describe the stage as complete while `gate --all` exits non-zero or while an
 obligation is planned or in progress: say what remains.
 
 Routine cycles involve no approval request to the developer. Never edit `tdd-evidence.md`
-directly, and never copy test output into the artefacts.
+or `tests/tdd-evidence.md` directly, and never copy test output into the artefacts.

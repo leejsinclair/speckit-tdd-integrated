@@ -23,9 +23,9 @@ strategy: wrap
 >   running the check. Do not describe the feature's work as verified.
 > - **If `plan.md` has a Verification Plan with no `### Behaviour checklist` sub-heading
 >   and the feature has no `tests/behaviour-checklist.md`**, the feature was planned before
->   the behaviour checklist existed. State this gap now and again in the Completion
->   Report, name `__SPECKIT_COMMAND_PLAN__` as the way to add the checklist, and carry on
->   as before: generate and check the task list against the Verification Plan, with no
+>   the behaviour checklist existed. State this gap now and again in the Completion Report,
+>   name `__SPECKIT_COMMAND_PLAN__` as the way to add the checklist, and carry on as
+>   before: generate and check the task list against the Verification Plan, with no
 >   checklist rule applied. Do not describe the feature's behaviour as covered by a
 >   checklist.
 > - **Otherwise** test tasks are not optional. This overrides the statement below that
