@@ -174,6 +174,32 @@ Using both on one feature would give two lists of the same scenarios. If you nee
 executable Gherkin, treat it as the test that verifies an obligation, and keep one list of
 behaviours.
 
+## When TDD and BDD cannot apply
+
+Some work cannot be verified by a test: the project has no way to run tests, a service a
+test needs is unreachable, or the check is one only a person can make. The process does
+not stop, and it never reports such work as verified.
+
+- **No test tooling.** The plan stage records a single `None` row in the Verification
+  commands table and says plainly that nothing will be verified by tests. The process never
+  chooses, installs or configures a framework. Stages complete, the final report states that
+  nothing was verified by tests, and declaring a command later switches the checks on.
+- **A test that cannot run.** `tdd_check.py defer --vo VO-nnn --reason "..."` records that
+  an obligation's test is not being run. The agent may defer alone only for a recorded
+  environment failure or for no test tooling; any other reason needs a named person's
+  approval, as other exceptions do. A deferred obligation has the status `deferred`.
+- **A check only a person can do.** The plan lists it in the `### Manual verification`
+  table. The person records the result with
+  `tdd_check.py manual --check MV-nnn --result pass|fail --by NAME`. Until then the check is
+  `manual (open)`.
+
+`status` lists these under "Not verified by tests" with a `Counts:` line, and `compliance`
+gives notices for open or failed manual checks and for deferrals. Notices never fail the
+check, whatever the proportion deferred. Deferrals and manual results are chained evidence
+rows, so a casual edit shows. See the process rules,
+[When verification is not possible](templates/tdd-process-rules.md), and the example runs
+`examples/runs/no-tooling/` and `examples/runs/deferred/`.
+
 ## Observable criteria for successful operation
 
 Each of these can be checked from a feature's artefacts, without reading its code. The
@@ -264,6 +290,15 @@ These are limits of the first release. None is presented as covered.
 - **Large features slow down.** `gate --all`, `status` and `compliance` scan every record
   per task or obligation and take longer than two seconds at about ten times the stated
   scale of 200 tasks and 1,000 records.
+- **Items stay editable with no baseline.** A feature with no recorded run has no fixed
+  behaviour items, so its checklist can be edited freely until the first run.
+- **A person's word on manual checks.** `manual` records the name and result it is given.
+  Nothing confirms that the check was done as the steps say.
+- **The reason for a deferral is judgement.** The checks require a reason and, outside an
+  environment failure or no test tooling, an approval. They do not decide whether the reason
+  is good.
+- **All deferred completes, by design.** A feature whose obligations are all deferred
+  passes, with notices. A reviewer reads the counts.
 - **Windows is untested.**
 - **No bundle.** The two packages are installed by two commands.
 

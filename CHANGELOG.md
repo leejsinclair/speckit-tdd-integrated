@@ -6,6 +6,32 @@ All notable changes to this project are recorded here. Versions follow semantic 
 
 ### 0.3.0
 
+Work that tests cannot verify: a project with no test tooling, a test that cannot run, and
+checks only a person can do.
+
+Added
+
+- No-tooling mode: a single `None` row in the Verification commands table. Stages complete,
+  and nothing is reported as verified by tests. No framework is chosen, installed or
+  configured.
+- `defer`, which records that an obligation's test is not being run, with a reason. Status
+  `deferred`; evidence table `## Deferrals` (`DF-nn`), added on first use.
+- `manual`, which records a person's result for a check in the new `### Manual verification`
+  plan table (`MV-nnn`). Evidence table `## Manual results` (`MR-nn`), added on first use.
+  Rules M1 and M2 check the table; gate rule G12; compliance rule C9.
+- `status` lists what is not verified by tests, with a `Counts:` line. `compliance` gives
+  notices, never findings, for open or failed manual checks and for deferrals.
+- Behaviour items may name `MV-` ids in Verified by.
+- Examples `examples/runs/no-tooling/` and `examples/runs/deferred/`, and story
+  `examples/stories/09-new-project-no-framework.md`.
+
+Changed
+
+- A plan whose Verification commands table holds only `None` now passes. It was a finding.
+- `defer` and `manual` add tables to the evidence document only when first used.
+
+Upgrade: none needed. Features planned before this release are read as before.
+
 ### 0.2.0
 
 The behaviour checklist: a document of observable behaviours, written at the plan stage,

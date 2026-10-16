@@ -106,6 +106,21 @@ story's checklist describes: `plan` reports **B5** for items that name code elem
 **B1** for the requirement the code does not yet meet, and the plan stage does not report
 completion until they are corrected.
 
+## Judging work that tests cannot verify
+
+Three cases cover it. Story 09 in an empty project with no test framework: all five stages
+complete, the plan records `None`, no framework is chosen or installed, and the final report
+says nothing was verified by tests. The run `examples/runs/no-tooling/` shows the result,
+and `examples/runs/deferred/` shows a deferral and a manual check beside a verified
+obligation. For each, run `status` and `compliance` and read:
+
+- **Counted apart.** Deferred obligations and manual checks sit under "Not verified by
+  tests" and are not in the verified count.
+- **Reasoned.** Every deferral has a reason, and one outside an environment failure or no
+  test tooling has a named approver.
+- **A person's result is theirs.** A manual result carries the name of the person who did
+  the check, not the agent's.
+
 ## What a compliant verdict does and does not show
 
 It shows that the recorded process was followed: the evidence came from real runs through
