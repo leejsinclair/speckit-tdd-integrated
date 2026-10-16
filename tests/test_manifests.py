@@ -455,5 +455,64 @@ class BehaviourChecklistRulesTests(unittest.TestCase):
         self.assertIn("planned before", text)
 
 
+GAP_PHRASE = "no `### Behaviour checklist` sub-heading"
+
+
+class OlderFeatureGapTests(unittest.TestCase):
+    """Each later stage reports the checklist gap of a feature planned before it existed."""
+
+    def gap(self, stage):
+        text, _above, _below = wrapper_parts(stage)
+        found = flat(text)
+        self.assertIn(GAP_PHRASE, found, stage)
+        start = found.index(GAP_PHRASE)
+        return found[max(0, start - 300) : start + 700]
+
+    def test_tasks_analyze_and_implement_each_describe_the_gap(self):
+        for stage in ("tasks", "analyze", "implement"):
+            with self.subTest(stage=stage):
+                gap = self.gap(stage)
+                self.assertIn("__SPECKIT_COMMAND_PLAN__", gap)
+                self.assertIn("gap", gap)
+                self.assertIn("Verification Plan", gap)
+
+    def test_the_gap_is_reported_at_the_start_and_in_the_final_report(self):
+        for stage, report in (("tasks", "Completion Report"), ("implement", "Completion Report")):
+            with self.subTest(stage=stage):
+                self.assertIn("now and again in the " + report, self.gap(stage))
+        self.assertIn("at the start of the analysis report and again in its summary", self.gap("analyze"))
+
+    def test_the_gap_does_not_stop_the_stage(self):
+        for stage in ("tasks", "analyze", "implement"):
+            with self.subTest(stage=stage):
+                self.assertIn("carry on", self.gap(stage))
+
+    def test_tasks_wrapper_names_b7_and_the_checklist_finding(self):
+        text = flat(wrapper_parts("tasks")[2])
+        check = text[text.index("**Check**") :]
+        self.assertIn("B7", check)
+        self.assertIn("CHECKLIST", check)
+
+    def test_analyze_wrapper_describes_b1_to_b7_and_still_modifies_nothing(self):
+        _text, _above, below = wrapper_parts("analyze")
+        found = flat(below)
+        self.assertIn("B1 to B7", found)
+        self.assertIn("**Modify nothing.**", found)
+        self.assertIn("Do not correct `plan.md`, `tasks.md` or the behaviour checklist here", found)
+
+    def test_implement_wrapper_says_the_baseline_is_refused_while_the_checklist_fails(self):
+        _text, _above, below = wrapper_parts("implement")
+        found = flat(below)
+        self.assertIn("the baseline is refused while the checklist fails", found)
+        self.assertIn("a refusal means returning to the plan stage", found)
+
+    def test_implement_wrapper_names_both_evidence_locations(self):
+        text = flat(wrapper_parts("implement")[0])
+        self.assertIn("`tdd-evidence.md`", text)
+        self.assertIn("`tests/tdd-evidence.md`", text)
+        _text, _above, below = wrapper_parts("implement")
+        self.assertIn("`tests/tdd-evidence.md`", flat(below))
+
+
 if __name__ == "__main__":
     unittest.main()
