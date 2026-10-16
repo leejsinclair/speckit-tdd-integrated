@@ -262,6 +262,14 @@ class G10Tests(RepoCase):
         self.assertEqual(result.code, 2, result)
         self.assertIn(G10_CHANGED, result.err.splitlines())
 
+    def test_the_refusal_names_the_way_forward_for_an_item_change(self):
+        root = self.repo("item-changed")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T014", new_string="- [X] T014")
+        err = self.check(["hook"], root, stdin=json.dumps(payload)).err
+        self.assertIn("tdd_check.py expectation --item <item id>", err)
+        self.assertIn("tdd_check.py approve --id <BX-nn>", err)
+
     def test_the_gate_changes_no_file(self):
         root = self.repo("item-changed")
         before = snapshot(root)

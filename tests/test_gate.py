@@ -360,6 +360,14 @@ class G11Tests(GateCase):
         self.assertEqual(result.code, 1, result)
         self.assertIn(self.B1.format(task="T015"), result.out.splitlines())
 
+    def test_the_refusal_names_the_way_forward_for_a_checklist_finding(self):
+        root = self.repo("g11-requirement-added")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T015", new_string="- [X] T015")
+        err = " ".join(self.check(["hook"], root, stdin=json.dumps(payload)).err.split())
+        self.assertIn("return to the plan stage", err)
+        self.assertIn("specification or the Verification Plan first and then the checklist", err)
+
     def test_the_hook_refuses_to_mark_complete_a_task_held_by_g11(self):
         root = self.repo("g11-requirement-added")
         payload = json.loads(load_payload("edit-tasks.json", root))
