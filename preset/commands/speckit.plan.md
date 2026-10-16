@@ -15,10 +15,11 @@ strategy: wrap
 >
 > Otherwise read `.specify/extensions/integrated-tdd/templates/tdd-process-rules.md` in
 > full before planning. This planning run must also fill the `## Verification Plan`
-> section of the plan, as described in "Verification Plan" at the end of this command.
-> It is a Phase 1 output alongside `data-model.md`, `contracts/` and `quickstart.md`:
-> fill it before the post-design Constitution Check, the post-execution hooks and the
-> Completion Report, and do not report the plan complete while its check fails.
+> section of the plan, and write the behaviour checklist, `tests/behaviour-checklist.md`,
+> as described in "Verification Plan" at the end of this command. Both are Phase 1 outputs
+> alongside `data-model.md`, `contracts/` and `quickstart.md`: complete them before the
+> post-design Constitution Check, the post-execution hooks and the Completion Report, and
+> do not report the plan complete while its check fails.
 
 {CORE_TEMPLATE}
 
@@ -55,22 +56,41 @@ replace the example rows. Follow the "Verification intent" rules in the process 
    automatically, add a row with the reason and how it is verified instead. Write a single
    `None` row when there are no exemptions.
 
-4. **Material ambiguity**: if a requirement is ambiguous, or contradicts another, in a way
+4. **Behaviour checklist**: write `tests/behaviour-checklist.md` in FEATURE_DIR, after the
+   three tables, following "Behaviour checklist" in the process rules. When `IMPL_PLAN`'s
+   Verification Plan has no `### Behaviour checklist` sub-heading, add it after the
+   exemptions table, followed by this line exactly:
+
+   ```text
+   Behaviour items are in [tests/behaviour-checklist.md](tests/behaviour-checklist.md).
+   ```
+
+   Spec Kit does not copy the template again when `IMPL_PLAN` already exists. Copy
+   `.specify/extensions/integrated-tdd/templates/behaviour-checklist-template.md` to
+   `FEATURE_DIR/tests/behaviour-checklist.md`, creating `tests/` if needed, replace the
+   example sections, and fill it from FEATURE_SPEC and the obligations and exemptions just
+   written. Do not put it in `checklists/`.
+
+5. **Material ambiguity**: if a requirement is ambiguous, or contradicts another, in a way
    that changes what a test should assert, stop and ask the developer. Do not choose an
    interpretation. Leave that requirement without an obligation until the question is
    answered, record the answer under `## Clarifications` in FEATURE_SPEC, and then write
    the obligation.
 
-5. **Check**: from the repository root run
+6. **Check**: from the repository root run
 
    ```bash
    python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py plan
    ```
 
-   Each finding names a rule and a requirement or obligation. Correct the Verification
-   Plan and run the check again until it exits 0. Do not report the plan complete while it
+   The check covers the behaviour checklist as well as the Verification Plan. Each finding
+   names a rule and a requirement, obligation or item. Correct the Verification Plan or the
+   checklist and run the check again until it exits 0. Do not report the plan complete while it
    exits non-zero: say which findings remain and why, for example a question waiting for
    the developer or a project with no test command.
 
 In the Completion Report, state the number of obligations and exemptions, the verification
-commands found and where they came from, and the result of the check.
+commands found and where they came from, the location of the behaviour checklist
+(`tests/behaviour-checklist.md`) with the number of sections and items, and the result of
+the check. Ask for the checklist to be reviewed against the specification. No approval is
+requested and nothing waits for one: report the plan complete when the check passes.
