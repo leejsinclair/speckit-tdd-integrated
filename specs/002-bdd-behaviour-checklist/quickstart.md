@@ -312,3 +312,11 @@ to scenarios 3 to 6 and 8 and do not replace them.
   - `/speckit-plan` again: the plan check passed, `### Behaviour checklist` and its line were added to `plan.md`, `tests/behaviour-checklist.md` was written (6 sections, 7 items), and `tdd-evidence.md` stayed at the top of the feature directory (no `tests/tdd-evidence.md`). The check rejected `EC-01` and `EC-02` as not in `spec.md`, and the agent added those two labels to the specification's edge cases without changing any requirement text.
 - **A14**: with `checklists/requirements.md` complete (16 of 16 checked), `/speckit-implement` printed the core step's table with the single row `requirements.md | 16 | 16 | 0 | PASS`, did not stop to ask, and went on to T004. The behaviour checklist is not listed because it is not in `checklists/`. Confirmed (research.md).
 - **Removal**: `specify preset remove integrated-tdd` and `specify extension remove integrated-tdd --force`. What was left: `.specify/extensions/.backup` and `.registry`; `.claude/skills` with the four commands in their core content (no mention of `tdd_check` or the checklist); `.claude/settings.json` no longer exists, because the event was the only thing in it. A new small feature (`item_names`) taken through `/speckit-specify`, `/speckit-plan`, `/speckit-tasks` and `/speckit-implement` completed as core Spec Kit does: 8 tasks, 12 tests passing, no `tests/` folder and no checklist in `specs/002-item-names/`. The earlier feature's `tests/behaviour-checklist.md` and `tdd-evidence.md` are byte-for-byte unchanged and readable.
+
+### T062: quickstart scenario 1 in full
+
+- **Date**: 2026-10-16, at the commit that follows T061.
+- `python3 -B -m unittest discover -s tests`: `Ran 574 tests in 127.120s`, `OK`.
+- `uvx ruff check .`: `All checks passed!`.
+- `npx -y markdownlint-cli2`: `Linting: 63 files`, `Summary: 0 issues in 0 files`.
+- Findings fixed along the way: line length and unused imports in the new tests; files opened and not closed in four of them (the `ResourceWarning`s of earlier full runs); none remain.
