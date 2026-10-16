@@ -569,6 +569,34 @@ class FindingsFromTheHaikuRunsTests(unittest.TestCase):
         self.assertIn("in the Completion Report", section)
 
 
+class UnchangedByConstructionStepTests(unittest.TestCase):
+    """The plan wrapper applies the rule at the step that writes obligations (found in the one-off Sonnet runs)."""
+
+    def steps(self):
+        below = wrapper_parts("plan")[2]
+        start = below.index("**Verification obligations**")
+        return flat(below[start : below.index("**Behaviour checklist**")])
+
+    def test_the_obligations_and_exemptions_steps_state_the_rule(self):
+        found = self.steps()
+        self.assertIn("states that existing behaviour stays unchanged", found)
+        self.assertIn("gives no way to vary it", found)
+        self.assertIn("write no obligation for it", found)
+        self.assertIn("unchanged by construction", found)
+
+    def test_it_asks_for_an_exemption_and_an_item_and_a_note_in_the_report(self):
+        found = self.steps()
+        self.assertIn("a requirement or an edge case", found)
+        self.assertIn("a behaviour item whose Verified by is that exemption", found)
+        self.assertIn("name it in the Completion Report so the developer can overrule it", found)
+
+    def test_it_does_not_put_the_question_to_the_developer(self):
+        self.assertIn("do not put it to the developer as an ambiguity", self.steps())
+
+    def test_it_applies_only_when_the_change_adds_no_way_to_vary_the_behaviour(self):
+        self.assertIn("if the change does add a way to vary it, write an obligation as usual", self.steps())
+
+
 class EdgeCaseLabelTests(unittest.TestCase):
     """The plan wrapper says what to do when the specification's edge cases carry no ids."""
 
