@@ -135,3 +135,14 @@ checks, and applies the same two limits (2 s for a check, 1 s for the hook).
   limit; the other tests passed. This is the slowdown at about ten times the stated scale
   that the README's Known limits already record, and it is not new to deferrals and manual
   checks.
+
+### T034. Whole suite, lint and Python 3.9
+
+- `python3 -m unittest discover -s tests`: `Ran 788 tests in 219.090s`, `OK`.
+- The same under Python 3.9.25: `Ran 788 tests in 166.341s`, `OK`.
+- `uvx ruff check .`: `All checks passed!`.
+- `uvx ruff format --check .`: `2 files would be reformatted`: `tests/test_evidence_location.py`
+  and `tests/test_performance.py`. In `test_performance.py` the lines it would change are ones
+  written before this feature; the code added here is formatted. Existing tests are not edited
+  (SC-006), so both are left for the maintainer.
+- `npx markdownlint-cli2`: `Summary: 0 issues in 0 files` (82 files).
