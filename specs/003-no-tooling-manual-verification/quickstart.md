@@ -268,3 +268,11 @@ the new guard and tables, with the same behaviour for existing callers. `build_f
 `tests/test_performance.py` gained an optional argument. T040 also found four existing
 assertions that a formatter run had reflowed onto one line each, with the same meaning, and
 restored them to their original text.
+
+### T038. Reader check (partial)
+
+The maintainer, who wrote and approved this feature, read the README on 2026-10-17 and said it
+"looks ok". This is not the check SC-005 asks for: the reader had seen the feature, did not read
+`templates/tdd-process-rules.md`, and did not answer the three questions of User Story 4. The
+task stays `[~]` skipped until a reader who has not seen the feature answers them from the two
+documents alone.
