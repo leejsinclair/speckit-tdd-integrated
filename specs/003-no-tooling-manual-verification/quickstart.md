@@ -192,3 +192,41 @@ A release tree from `git archive HEAD` was installed into a throwaway project ma
 - The command forms differ from the scenario text: `--dev` takes the path
   (`specify extension add --dev <path>`), and `specify init` takes `--integration claude`,
   not `--ai`.
+
+### T037. Story 09 with Claude Code
+
+Driven with `claude -p --effort low --permission-mode acceptEdits --allowedTools=Bash`, one
+invocation per stage, in an empty project (a README and an empty `src/`) with both packages
+installed from `git archive` of the working tree at the T036 commit. Haiku and Sonnet, in that
+order. All twelve invocations exited 0.
+
+**First pass** (story text without a language): the specify, clarify, plan, tasks and analyze
+stages completed for both models, and `plan` and `compliance` passed. `/speckit-implement`
+stopped before the first task for both, changed no file and marked no task. The stated reason
+was that no language was chosen (T001 asked the developer to choose the stack); each said it
+would not choose a framework. The stop was for the missing language and not for the missing
+test command, so no wrapper was changed. Story 09 now names the language in its text and says
+why.
+
+**Second pass** (story text "written in Python in `src/cart.py`"):
+
+- **Haiku**: all six stages completed. `plan` passed with the `None` row; `compliance` printed
+  `COMPLIANT` with the no-tooling notice and one deferral notice per obligation (VO-001 to
+  VO-009). Implement wrote `src/cart.py` and marked 11 of 20 tasks; it did not write the nine
+  test tasks and asked the developer whether to declare a test command or accept a `unittest`
+  placeholder. No framework was installed, no test file was written, and no evidence document
+  exists. Its `tasks.md` named the standard library `unittest` as a placeholder, "chosen
+  because no framework is declared": a departure from "the process never chooses a
+  framework", although nothing was installed or configured. It is recorded here for the
+  maintainer.
+- **Sonnet**: all six stages completed. The plan has the `None` row and seven obligations;
+  `compliance` printed `COMPLIANT` with notices; implement wrote `src/cart.py` and
+  `tests/test_cart.py` (five plain-`assert` tests, no framework), marked 12 of 15 tasks, and
+  reported the requirements as not verified by tests. It ticked two example lines in
+  `tasks.md` by mistake and reverted them. It gave a test command only as a suggestion.
+- **Final report wording** (Sonnet): "**Not verified:** ... are all listed as not verified"
+  and "If you want real evidence, add a test command to the plan's Verification commands
+  table ... I did not choose one for you." (Haiku): "either declare a test command in
+  `plan.md`'s Verification commands table ... Then the nine test tasks can be written and run
+  through the Red, Green, Refactor cycle."
+- **Framework chosen or installed**: no, for both. `gate --all` passed for both.

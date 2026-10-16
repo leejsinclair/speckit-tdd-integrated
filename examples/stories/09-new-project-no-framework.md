@@ -10,13 +10,14 @@ tests, carries on, and switches the checks on once the developer declares a comm
 Give this to `/speckit-specify`, then run the five stages in order:
 
 ```text
-Add a cart total to the shop. A cart totals the prices of its items. An empty cart totals
-zero. A price of zero is allowed.
+Add a cart total to the shop, written in Python in src/cart.py. A cart totals the prices of
+its items. An empty cart totals zero. A price of zero is allowed.
 ```
 
 ## Setup
 
-An empty project: a `README.md`, a source folder holding no code that totals a cart, no
+An empty project (the story text names the language, because an agent cannot implement
+without one, and that is not the stop this story looks for): a `README.md`, a source folder holding no code that totals a cart, no
 test folder, no package file or Makefile that runs tests, and no continuous integration
 configuration. Both packages are installed.
 
