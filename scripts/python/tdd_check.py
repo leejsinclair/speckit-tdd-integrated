@@ -1193,9 +1193,25 @@ def run_files(args, root, evidence):
     return listed[0] if listed else []
 
 
+def require_passing_checklist(feature_dir, plan):
+    """Refuse the baseline while the checklist fails: implementation does not begin on a failing checklist."""
+    if not checklist_applies(feature_dir):
+        return
+    spec = parse_spec(require_text(feature_dir, SPEC_FILE))
+    findings = checklist_plan_findings(feature_dir, spec, plan)
+    if findings:
+        raise UsageError(
+            "the behaviour checklist must pass before implementation begins; "
+            "return to the plan stage to correct it. Nothing was recorded.\n"
+            + "\n".join(str(finding) for finding in findings)
+        )
+
+
 def cmd_run(args, root, feature_dir):
     plan = require_plan(feature_dir)
     command = validate_run(args, plan, feature_dir)
+    if args.phase == "baseline":
+        require_passing_checklist(feature_dir, plan)
     evidence = open_ledger(feature_dir)
     if args.phase != "baseline":
         require_baseline(evidence)
