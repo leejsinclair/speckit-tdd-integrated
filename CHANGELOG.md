@@ -4,6 +4,8 @@ All notable changes to this project are recorded here. Versions follow semantic 
 
 ## Unreleased
 
+### 0.3.0
+
 ### 0.2.0
 
 The behaviour checklist: a document of observable behaviours, written at the plan stage,

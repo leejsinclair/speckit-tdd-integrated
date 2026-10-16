@@ -35,6 +35,11 @@ EXPECTATION_HEADER = [
 ]  # fmt: skip
 DECISION_HEADER = ["ID", "Opened", "Question", "Tasks", "Status", "Answer", "Decided by", "Resolved"]
 CHAINED = [name for name in RECORD_HEADER if name not in ("Classification", "Note", "Check")]
+DEFERRAL_HEADER = ["ID", "Time", "Obligations", "Reason", "Basis", "Needs approval", "Approved by", "Check"]
+DEFERRAL_CHAINED = ["ID", "Time", "Obligations", "Reason", "Basis", "Needs approval"]
+MANUAL_HEADER = ["ID", "Covers", "Steps", "Expected result", "Why not automated"]
+MANUAL_RESULT_HEADER = ["ID", "Time", "Check", "Result", "Recorded by", "Note", "Check value"]
+MANUAL_RESULT_CHAINED = ["ID", "Time", "Check", "Result", "Recorded by"]
 
 
 # ---------------------------------------------------------------------------
@@ -42,10 +47,15 @@ CHAINED = [name for name in RECORD_HEADER if name not in ("Classification", "Not
 # ---------------------------------------------------------------------------
 
 
-def check_value(previous, row):
-    """First six hex characters of SHA-256 over the previous check and the row's cells."""
-    text = previous + "\n" + "|".join(row[name] for name in CHAINED)
+def check_over(previous, row, columns):
+    """First six hex characters of SHA-256 over the previous check and the cells named by ``columns``."""
+    text = previous + "\n" + "|".join(row[name] for name in columns)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
+
+
+def check_value(previous, row):
+    """The check value of a Test Execution Record."""
+    return check_over(previous, row, CHAINED)
 
 
 def fingerprint(contents):
@@ -90,7 +100,9 @@ def rec(task, vos, phase, command, selector, result, valid, classification="-", 
 
 
 def baseline(result="pass", note="-", command="suite"):
-    return rec("-", "-", "baseline", command, "-", result, "yes", "-" if result == "pass" else "unclassified", note=note)
+    return rec(
+        "-", "-", "baseline", command, "-", result, "yes", "-" if result == "pass" else "unclassified", note=note
+    )
 
 
 def red(task, vo, selector="assert", fp=FP_A, files="tests/test_cart.py", command="unit"):
@@ -302,8 +314,7 @@ def variant(**changes):
 
 
 MARKER = (
-    "### Behaviour checklist\n\n"
-    "Behaviour items are in [tests/behaviour-checklist.md](tests/behaviour-checklist.md).\n"
+    "### Behaviour checklist\n\nBehaviour items are in [tests/behaviour-checklist.md](tests/behaviour-checklist.md).\n"
 )
 
 
@@ -349,6 +360,86 @@ def with_checklist(checklist=None, **changes):
     if checklist is not None:
         files["tests/behaviour-checklist.md"] = checklist
     return files
+
+
+NO_TOOLING_ROW = "| None | - | - | - |\n"
+COMMAND_ROWS = (
+    "| unit | `sh tests/fixtures/bin/fake_test.sh {select}` | focused | tests/fixtures/bin |\n"
+    "| suite | `sh tests/fixtures/bin/fake_test.sh pass` | broad | tests/fixtures/bin |\n"
+)
+
+
+def no_tooling(**changes):
+    """A ``variant()`` whose commands table holds only the ``None`` row (research D1).
+
+    It has no evidence document unless ``evidence`` is given, because a project with no
+    test tooling has no runs to record.
+    """
+    params = {"evidence": None}
+    params.update(changes)
+    plan = params.get("plan", PLAN)
+    if COMMAND_ROWS in plan:
+        params["plan"] = swap(plan, COMMAND_ROWS, NO_TOOLING_ROW)
+    return variant(**params)
+
+
+def mv(ident="MV-001", covers="FR-003", steps="Open the cart page and compare it with the design",
+       expected="The layout matches the design", why="Visual layout has no stable automated check"):  # fmt: skip
+    return {"ID": ident, "Covers": covers, "Steps": steps, "Expected result": expected, "Why not automated": why}
+
+
+def manual_table(rows):
+    """The ``### Manual verification`` sub-heading and table; no rows gives a single ``None`` row."""
+    if not rows:
+        rows = [{"ID": "None", "Covers": "-", "Steps": "-", "Expected result": "-", "Why not automated": "-"}]
+    return "### Manual verification\n\n" + table(MANUAL_HEADER, list(rows))
+
+
+def with_manual(rows=None, **changes):
+    """A ``variant()`` with a ``### Manual verification`` table after the exemptions table."""
+    files = variant(**changes)
+    plan = files["plan.md"]
+    files["plan.md"] = swap(
+        plan, "\n## Project Structure", "\n" + manual_table([mv()] if rows is None else rows) + "\n## Project Structure"
+    )
+    return files
+
+
+def _chained_rows(rows, columns, check_column):
+    previous = ""
+    out = []
+    for given in rows:
+        row = dict(given)
+        row.setdefault(check_column, check_over(previous, row, columns))
+        previous = row[check_column]
+        out.append(row)
+    return out
+
+
+def df(ident, vos, reason="needs queue", basis="environment failure #2", needs="no", approved="-", time=None):
+    """A Deferral row; ``Check`` is added by ``deferrals_table``."""
+    return {
+        "ID": ident, "Time": time or stamp(40), "Obligations": vos, "Reason": reason, "Basis": basis,
+        "Needs approval": needs, "Approved by": approved,
+    }  # fmt: skip
+
+
+def mr(ident, check, result="pass", by="A Person", note="-", time=None):
+    """A Manual Result row; ``Check value`` is added by ``manual_results_table``."""
+    return {
+        "ID": ident, "Time": time or stamp(41), "Check": check, "Result": result, "Recorded by": by, "Note": note,
+    }  # fmt: skip
+
+
+def deferrals_table(rows):
+    """The ``## Deferrals`` section, each row chained over its own chain (data-model.md)."""
+    return "\n## Deferrals\n\n" + table(DEFERRAL_HEADER, _chained_rows(rows, DEFERRAL_CHAINED, "Check"))
+
+
+def manual_results_table(rows):
+    """The ``## Manual results`` section, each row chained over its own chain."""
+    chained = _chained_rows(rows, MANUAL_RESULT_CHAINED, "Check value")
+    return "\n## Manual results\n\n" + table(MANUAL_RESULT_HEADER, chained)
 
 
 CASES = {}
@@ -1112,7 +1203,9 @@ def full_checklist():
         [("US1-AS1: empty cart", SCENARIO_1, [ITEM_EMPTY]), ("US1-AS2", SCENARIO_2, [ITEM_SUM])],
         other=[ITEM_OTHER],
     )
-    return text + "\n```markdown\n- **BI-099** Expresses: FR-001. Verified by: VO-001.\n- [ ] a checkbox in a fence\n```\n"
+    return (
+        text + "\n```markdown\n- **BI-099** Expresses: FR-001. Verified by: VO-001.\n- [ ] a checkbox in a fence\n```\n"
+    )
 
 
 @case("parse-checklist-full")
@@ -1220,7 +1313,9 @@ def cl_sections(items1=None, items2=None, quote1=SCENARIO_1, quote2=SCENARIO_2):
 def cl_case(sections=None, other=None, text=None, **changes):
     """valid-minimal with the marker and a checklist; ``text`` replaces the whole checklist file."""
     if text is None:
-        text = checklist_text(sections if sections is not None else cl_sections(), [CL_ITEM_3] if other is None else other)
+        text = checklist_text(
+            sections if sections is not None else cl_sections(), [CL_ITEM_3] if other is None else other
+        )
     return with_checklist(text, **changes)
 
 
@@ -1355,12 +1450,20 @@ def _b4_status():
     return cl_append("\nStatus: draft\n")
 
 
-SPEC_NAMES_PATH = swap(SPEC, "- A price of zero is allowed.", "- A price of zero is allowed.\n- The totals are also written to out/totals.csv.")
+SPEC_NAMES_PATH = swap(
+    SPEC,
+    "- A price of zero is allowed.",
+    "- A price of zero is allowed.\n- The totals are also written to out/totals.csv.",
+)
 TASKS_NAME_SUBTOTAL = swap(
-    TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total with a subtotal in src/cart.py"
+    TASKS,
+    "Implement the empty cart total in src/cart.py",
+    "Implement the empty cart total with a subtotal in src/cart.py",
 )
 TASKS_NAME_CART_TOTAL = swap(
-    TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total as cart_total() in src/cart.py"
+    TASKS,
+    "Implement the empty cart total in src/cart.py",
+    "Implement the empty cart total as cart_total() in src/cart.py",
 )
 
 
@@ -1383,7 +1486,11 @@ def _b5_identifier():
 @case("b5-call-form")
 def _b5_call_form():
     # The task list names item_count without parentheses; the clause calls it with them.
-    tasks = swap(TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total beside item_count in src/cart.py")
+    tasks = swap(
+        TASKS,
+        "Implement the empty cart total in src/cart.py",
+        "Implement the empty cart total beside item_count in src/cart.py",
+    )
     item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "item_count() is called"),
                                          ("Then", "the total is zero")])  # fmt: skip
     return cl_case(sections=cl_sections(items1=[item]), tasks=tasks)
@@ -1392,8 +1499,16 @@ def _b5_call_form():
 @case("b5-call-form-in-spec")
 def _b5_call_form_in_spec():
     # The specification names item_count (without parentheses), so the clause may call it.
-    spec = swap(SPEC, "- A price of zero is allowed.", "- A price of zero is allowed.\n- The item_count of a cart is not changed.")
-    tasks = swap(TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total beside item_count in src/cart.py")
+    spec = swap(
+        SPEC,
+        "- A price of zero is allowed.",
+        "- A price of zero is allowed.\n- The item_count of a cart is not changed.",
+    )
+    tasks = swap(
+        TASKS,
+        "Implement the empty cart total in src/cart.py",
+        "Implement the empty cart total beside item_count in src/cart.py",
+    )
     item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "item_count() is called"),
                                          ("Then", "the total is zero")])  # fmt: skip
     return cl_case(sections=cl_sections(items1=[item]), spec=spec, tasks=tasks)
@@ -1408,7 +1523,9 @@ def _b5_backticked():
 
 @case("b5-spec-names-path")
 def _b5_spec_names_path():
-    return cl_case(sections=cl_sections(items1=[then_clause(CL_ITEM_1, "out/totals.csv holds zero")]), spec=SPEC_NAMES_PATH)
+    return cl_case(
+        sections=cl_sections(items1=[then_clause(CL_ITEM_1, "out/totals.csv holds zero")]), spec=SPEC_NAMES_PATH
+    )
 
 
 @case("b5-identifier-not-in-design")
@@ -1559,7 +1676,9 @@ CHANGED_FP = item_fp(CL_ITEM_2_CHANGED)
 
 @case("item-change-recorded")
 def _item_change_recorded():
-    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[bx("BX-01", "BI-002", CHANGED_FP)])
+    return item_case(
+        items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[bx("BX-01", "BI-002", CHANGED_FP)]
+    )
 
 
 @case("item-change-awaiting-approval")
@@ -1602,7 +1721,9 @@ def _item_id_reused():
 
 @case("g11-requirement-added")
 def _g11_requirement_added():
-    spec = swap(SPEC, "- **FR-003**:", "- **FR-004**: The system MUST total a cart in a single currency.\n- **FR-003**:")
+    spec = swap(
+        SPEC, "- **FR-003**:", "- **FR-004**: The system MUST total a cart in a single currency.\n- **FR-003**:"
+    )
     return item_case(spec=spec)
 
 
@@ -1685,7 +1806,12 @@ def item_summary(item_lines, not_verified="FR-003 (exempt: see plan)", changes="
     )
     before, after = head.split("\n\n**Not verified**", 1)
     return (
-        before + "\n\n" + table_head + "\n".join(item_lines) + "\n\n**Not verified**" + after.replace(
+        before
+        + "\n\n"
+        + table_head
+        + "\n".join(item_lines)
+        + "\n\n**Not verified**"
+        + after.replace(
             "\n\n**Pre-existing failures**", "\n\n**Item changes**: " + changes + ".\n\n**Pre-existing failures**", 1
         )
     )
@@ -1701,7 +1827,9 @@ VERIFIED_ITEM_LINES = [
 
 def compliant_items(items=BASE_ITEMS, rows=None, changes=(), summary_text=None, **more):
     text = summary_text if summary_text is not None else item_summary(VERIFIED_ITEM_LINES)
-    return item_case(items=items, rows=rows, changes=changes, records=BOTH_CYCLES, tasks=EVERY_TASK, summary=text, **more)
+    return item_case(
+        items=items, rows=rows, changes=changes, records=BOTH_CYCLES, tasks=EVERY_TASK, summary=text, **more
+    )
 
 
 CASES["compliance-c8-pass"] = compliant_items
@@ -1762,11 +1890,15 @@ def write_case(name, files):
             handle.write(text)
 
 
-def main():
-    for name in sorted(CASES):
+def main(names=()):
+    """Write every case, or only the cases named on the command line."""
+    chosen = sorted(names) if names else sorted(CASES)
+    for name in chosen:
         write_case(name, CASES[name]())
-    print(f"wrote {len(CASES)} fixture features")
+    print(f"wrote {len(chosen)} fixture features")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(sys.argv[1:])
