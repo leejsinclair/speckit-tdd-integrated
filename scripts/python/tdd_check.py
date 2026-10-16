@@ -1643,19 +1643,28 @@ def rule_b3(plan, items):
     ]
 
 
+def spellings(token):
+    """The ways a token is written in the artefacts: a call such as ``name()`` is also written ``name``."""
+    return [token, token[:-2]] if token.endswith("()") and len(token) > 2 else [token]
+
+
+def occurs_any(token, text):
+    return any(occurs(spelling, text) for spelling in spellings(token))
+
+
 def rule_b5(items, spec, design):
     findings = []
     for item in items:
         flagged = []
         for _keyword, words in item.clauses:
             for token, ticked in clause_tokens(words):
-                if token in flagged or occurs(token, spec.text):
+                if token in flagged or occurs_any(token, spec.text):
                     continue
                 if PATH_SHAPE.search(token):
                     flagged.append(token)
                     reason = f"`{token}` is a path-shaped token that spec.md does not name"
                     findings.append(Finding("B5", item.id, reason))
-                elif is_code_shaped(token, ticked) and occurs(token, design):
+                elif is_code_shaped(token, ticked) and occurs_any(token, design):
                     flagged.append(token)
                     reason = f"`{token}` is a code-shaped token that plan.md or tasks.md names and spec.md does not"
                     findings.append(Finding("B5", item.id, reason))

@@ -103,7 +103,8 @@ A clause's text is split on white space; leading and trailing punctuation other 
 | Code-shaped | contains `_`, `::` or `->`; ends in `()`; starts with a lower-case letter and contains an upper-case letter (lower camel case); or was written in backticks |
 
 "In `spec.md`", "in `plan.md`" and "in `tasks.md`" mean the token occurs in that file's
-text as a whole word, compared case-sensitively.
+text as a whole word, compared case-sensitively. A token ending in `()` also matches the
+same name written without the parentheses, because a call is written both ways.
 
 Examples, for a specification that never mentions them:
 
