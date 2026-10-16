@@ -1509,16 +1509,81 @@ def cmd_approve(args, root, feature_dir):
     """Record a person's approval. The name is recorded as given and cannot be verified."""
     require_plan(feature_dir)
     evidence = open_ledger(feature_dir)
-    recorded = evidence.expectations + evidence.exceptions + evidence.item_changes
+    recorded = evidence.expectations + evidence.exceptions + evidence.item_changes + evidence.deferrals
     entry = next((item for item in recorded if item.id == args.id), None)
     if entry is None:
         raise UsageError(f"no entry {args.id} in {evidence.name}; nothing was recorded")
+    if entry in evidence.deferrals and not entry.needs_approval:
+        raise UsageError(
+            f"{args.id} does not need approval: it rests on a recorded environment failure; nothing was recorded"
+        )
     if entry.cells["Approved by"] != "-":
         raise UsageError(f"{args.id} is already approved by {entry.cells['Approved by']}; nothing was recorded")
     name = clean(args.by)
     entry.cells["Approved by"] = name
     write_evidence(feature_dir, evidence)
     return EXIT_OK, [], [f"recorded approval of {args.id} by {name}"], {"id": args.id}
+
+
+def environment_failure(evidence, obligation):
+    """The latest record classified as an environment failure that names the obligation, or None."""
+    found = [
+        record
+        for record in evidence.records
+        if obligation in record.obligations and record.classification == "environment"
+    ]
+    return found[-1] if found else None
+
+
+def cmd_defer(args, root, feature_dir):
+    """Record that an obligation's test is not being run. Never approves: a deferral not resting on an
+    environment failure waits for a person (FR-008A)."""
+    plan = require_plan(feature_dir)
+    if plan.no_tooling:
+        raise UsageError("every obligation is already deferred: the plan records no test tooling; nothing was recorded")
+    held = {obligation.id for obligation in plan.obligations}
+    obligations = unique(args.vo)
+    for ident in obligations:
+        if ident not in held:
+            raise UsageError(f"obligation {ident} is not in the plan; nothing was recorded")
+    reason = clean(args.reason)
+    if reason == "-":
+        raise UsageError("--reason must say why the obligation is deferred; nothing was recorded")
+    evidence = open_ledger(feature_dir)
+    failures = [environment_failure(evidence, ident) for ident in obligations]
+    on_failure = all(failures)
+    basis = "environment failure " + ", ".join(f"#{record.seq}" for record in failures) if on_failure else "other"
+    ident = next_id("DF", evidence.deferrals)
+    row = {
+        "ID": ident,
+        "Time": utc_now(),
+        "Obligations": join_cell(obligations),
+        "Reason": reason,
+        "Basis": basis,
+        "Needs approval": "no" if on_failure else "yes",
+        "Approved by": "-",
+    }
+    previous = evidence.deferrals[-1].check if evidence.deferrals else ""
+    row["Check"] = deferral_check_value(previous, row)
+    evidence.deferrals.append(
+        Item(
+            id=ident, obligations=obligations, basis=basis, needs_approval=not on_failure, check=row["Check"], cells=row
+        )
+    )
+    write_evidence(feature_dir, evidence)
+    shown = basis if on_failure else "needs approval: other"
+    line = f"deferred {', '.join(obligations)} as {ident} ({shown})"
+    return (
+        EXIT_OK,
+        [],
+        [line],
+        {
+            "id": ident,
+            "obligations": obligations,
+            "basis": basis,
+            "needs_approval": not on_failure,
+        },
+    )
 
 
 def cmd_classify(args, root, feature_dir):
@@ -3162,6 +3227,10 @@ def build_parser():
     run.add_argument("--note", help="one line stored with the record")
     run.add_argument("--timeout", type=float, default=600.0, help="seconds (default 600)")
 
+    defer = subs.add_parser("defer", parents=[common], help="record that an obligation's test is not being run")
+    defer.add_argument("--vo", required=True, action="extend", nargs="+", metavar="VO", help="obligations deferred")
+    defer.add_argument("--reason", required=True, help="why the test is not being run")
+
     classify = subs.add_parser("classify", parents=[common], help="classify a failure record")
     classify.add_argument("--seq", required=True, type=int)
     classify.add_argument("--as", required=True, choices=CLASSIFICATIONS, dest="classification")
@@ -3217,6 +3286,7 @@ HANDLERS = {
     "expectation": cmd_expectation,
     "approve": cmd_approve,
     "classify": cmd_classify,
+    "defer": cmd_defer,
     "exception": cmd_exception,
     "decision": cmd_decision,
 }
