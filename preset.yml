@@ -3,7 +3,7 @@ schema_version: "1.0"
 preset:
   id: "integrated-tdd"
   name: "Integrated TDD Lifecycle"
-  version: "0.1.0"
+  version: "0.2.0"
   description: "Makes the plan, tasks, analyze and implement stages derive verification intent from requirements and follow Red, Green, Refactor with recorded evidence"
   author: "Lee Sinclair"
   license: "MIT"
