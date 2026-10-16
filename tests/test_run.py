@@ -30,9 +30,7 @@ class BaselineFirstTests(RunCase):
         self.assert_refused(self.green())
 
     def test_refactor_is_refused_without_a_baseline(self):
-        self.assert_refused(
-            self.run_phase("refactor", "unit", "--select", "pass", "--task", "T012", "--vo", "VO-001")
-        )
+        self.assert_refused(self.run_phase("refactor", "unit", "--select", "pass", "--task", "T012", "--vo", "VO-001"))
 
     def test_checkpoint_is_refused_without_a_baseline(self):
         self.assert_refused(self.run_phase("checkpoint", "suite"))
@@ -945,6 +943,39 @@ class RedRefusedForAnUnlinkedObligationTests(RepoCase):
             root,
         )  # fmt: skip
         self.assertNotIn("no behaviour item", result.err)
+
+
+class NoToolingRunTests(RepoCase):
+    """A run is refused when the plan records no test tooling (research D2; FR-004)."""
+
+    REFUSAL = "command '{command}' is not declared in the plan: the plan records no test tooling"
+
+    def assert_refused(self, root, command, *args):
+        before = snapshot(root)
+        result = self.check(["run"] + list(args), root)
+        self.assertEqual(result.code, 2, result)
+        self.assertIn(self.REFUSAL.format(command=command), result.err)
+        self.assertIn("nothing was recorded", result.err)
+        self.assertEqual(snapshot(root), before)
+
+    def test_a_baseline_run_is_refused_and_records_nothing(self):
+        root = self.repo("no-tooling-valid")
+        self.assert_refused(root, "suite", "--phase", "baseline", "--command", "suite")
+
+    def test_a_red_run_is_refused_and_records_nothing(self):
+        root = self.repo("no-tooling-valid")
+        write(root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
+        self.assert_refused(
+            root, "unit", "--phase", "red", "--command", "unit", "--select", "assert", "--task", "T011",
+            "--vo", "VO-001", "--tests", "tests/test_cart.py", "--expect", "AssertionError",
+        )  # fmt: skip
+
+    def test_the_refusal_of_a_plan_with_commands_is_unchanged(self):
+        root = self.repo("valid-minimal")
+        result = self.check(["run", "--phase", "baseline", "--command", "adhoc"], root)
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("command 'adhoc' is not declared in the plan; nothing was recorded", result.err)
+        self.assertNotIn("test tooling", result.err)
 
 
 if __name__ == "__main__":

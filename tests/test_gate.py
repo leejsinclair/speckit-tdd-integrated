@@ -34,9 +34,7 @@ class FirstRulesTests(GateCase):
         self.assert_passes("gate-g1-pass", "T015")
 
     def test_g3_fails_without_a_valid_failing_first_record(self):
-        self.assert_fails(
-            "gate-g3-fail", "T011", "G3 T011 VO-001: no valid failing-first record and no exception"
-        )
+        self.assert_fails("gate-g3-fail", "T011", "G3 T011 VO-001: no valid failing-first record and no exception")
 
     def test_g3_fails_with_no_evidence_document_at_all(self):
         root = self.repo("gate-g3-pass")
@@ -375,6 +373,67 @@ class G11Tests(GateCase):
         result = self.check(["hook"], root, stdin=json.dumps(payload))
         self.assertEqual(result.code, 2, result)
         self.assertIn(self.B1.format(task="T015"), result.err.splitlines())
+
+
+class NoToolingGateTests(GateCase):
+    """In no-tooling mode no rule needs a run (research D2, D4; FR-003, FR-005, SC-004)."""
+
+    def test_gate_all_passes_with_every_task_complete_and_no_evidence(self):
+        result = self.gate("no-tooling-complete", "--all")
+        self.assertEqual((result.code, result.out, result.err), (0, "gate: passed, 5 completed tasks\n", ""))
+
+    def test_every_test_and_behaviour_task_passes_on_its_own(self):
+        for task in ("T011", "T012", "T013", "T014", "T015"):
+            with self.subTest(task=task):
+                self.assert_passes("no-tooling-complete", task)
+
+    def test_an_open_decision_still_holds_a_task(self):
+        self.assert_fails("no-tooling-open-decision", "T013", "G2 T013 DN-01: an open decision holds this task")
+
+    def test_a_task_the_decision_does_not_list_still_passes(self):
+        self.assert_passes("no-tooling-open-decision", "T012")
+
+    def test_a_failing_checklist_holds_a_task_with_no_baseline_recorded(self):
+        for task in ("T014", "T015"):
+            with self.subTest(task=task):
+                self.assert_fails(
+                    "no-tooling-checklist-changed", task, f"G11 {task} FR-004: B1: no behaviour item expresses it"
+                )
+
+    def test_a_passing_checklist_holds_nothing(self):
+        root = self.repo("no-tooling-complete")
+        self.assertEqual(self.check(["gate", "--task", "T014"], root).code, 0)
+
+    def test_the_same_feature_with_a_command_declared_holds_the_same_tasks(self):
+        root = self.repo("no-tooling-complete")
+        path = os.path.join(self.feature(root), "plan.md")
+        with open(path) as handle:
+            text = handle.read()
+        commands = (
+            "| unit | `sh tests/fixtures/bin/fake_test.sh {select}` | focused | tests/fixtures/bin |\n"
+            "| suite | `sh tests/fixtures/bin/fake_test.sh pass` | broad | tests/fixtures/bin |\n"
+        )
+        self.assertIn("| None | - | - | - |\n", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| None | - | - | - |\n", commands))
+        result = self.check(["gate", "--all"], root)
+        self.assertEqual(result.code, 1, result)
+        lines = result.out.splitlines()
+        for finding in (
+            "G3 T011 VO-001: no valid failing-first record and no exception",
+            "G3 T012 VO-001: no valid failing-first record and no exception",
+            "G4 T012 VO-001: no valid passing record after its failing-first record",
+            "G3 T013 VO-002: no valid failing-first record and no exception",
+            "G3 T014 VO-002: no valid failing-first record and no exception",
+            "G4 T014 VO-002: no valid passing record after its failing-first record",
+        ):
+            self.assertIn(finding, lines)
+
+    def test_gate_creates_or_changes_no_file(self):
+        root = self.repo("no-tooling-complete")
+        before = snapshot(root)
+        self.check(["gate", "--all"], root)
+        self.assertEqual(snapshot(root), before)
 
 
 if __name__ == "__main__":

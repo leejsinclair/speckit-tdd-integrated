@@ -1986,6 +1986,22 @@ def _no_tooling_empty_table():
     return variant(plan=swap(PLAN, COMMAND_ROWS, ""), evidence=None)
 
 
+@case("no-tooling-complete")
+def _no_tooling_complete():
+    return no_tooling(tasks=EVERY_TASK)
+
+
+@case("no-tooling-open-decision")
+def _no_tooling_open_decision():
+    return no_tooling(tasks=done(TASKS, "T011"), evidence=evidence([], decisions=[dn("DN-01", "T013, T014")]))
+
+
+@case("no-tooling-checklist-changed")
+def _no_tooling_checklist_changed():
+    # A requirement added after the checklist was written: no item expresses it (B1).
+    return as_no_tooling(_g11_requirement_added())
+
+
 # ---------------------------------------------------------------------------
 
 

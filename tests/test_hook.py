@@ -408,5 +408,41 @@ class AgentNeutralityTests(unittest.TestCase):
             self.assertNotIn(name, source.lower())
 
 
+class NoToolingHookTests(SituationCase):
+    """The hook allows a task to be marked complete when the plan records no test tooling (FR-003)."""
+
+    fixture = "no-tooling-valid"
+
+    def test_a_test_task_can_be_marked_complete_with_no_evidence(self):
+        self.assert_allowed(self.edit("- [ ] T013", "- [X] T013"))
+
+    def test_a_behaviour_task_can_be_marked_complete_with_no_evidence(self):
+        self.assert_allowed(self.edit("- [ ] T014", "- [X] T014"))
+
+    def test_the_same_edit_is_refused_when_a_command_is_declared(self):
+        root = self.repo("valid-minimal")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T014", new_string="- [X] T014")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn(G3_T014, result.err.splitlines())
+
+    def test_an_open_decision_still_refuses_the_edit(self):
+        root = self.repo("no-tooling-open-decision")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T013", new_string="- [X] T013")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("G2 T013 DN-01: an open decision holds this task", result.err.splitlines())
+
+    def test_a_failing_checklist_still_refuses_the_edit(self):
+        root = self.repo("no-tooling-checklist-changed")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T015", new_string="- [X] T015")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("G11 T015 FR-004: B1: no behaviour item expresses it", result.err.splitlines())
+
+
 if __name__ == "__main__":
     unittest.main()
