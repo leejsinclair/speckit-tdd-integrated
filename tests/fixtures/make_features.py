@@ -1191,6 +1191,284 @@ def _parse_checklist_evidence():
 
 
 # ---------------------------------------------------------------------------
+# Checklist rule cases (T018): one per rule and per distinct reason
+# ---------------------------------------------------------------------------
+
+CL_ITEM_1 = bi(
+    "BI-001", ["FR-001", "US1-AS1"], ["VO-001"],
+    [("Given", "an empty cart"), ("When", "the shopper asks for the total"), ("Then", "the total is zero")],
+)  # fmt: skip
+CL_ITEM_2 = bi(
+    "BI-002", ["FR-002", "US1-AS2", "SC-001"], ["VO-002"],
+    [("Given", "a cart with two items priced 3 and 4"), ("When", "the shopper asks for the total"),
+     ("Then", "the total is 7")],
+)  # fmt: skip
+CL_ITEM_3 = bi(
+    "BI-003", ["FR-003"], ["exemption FR-003"],
+    [("Given", "the cart page is shown"), ("When", "the shopper looks at it"),
+     ("Then", "it follows the shop's visual layout")],
+)  # fmt: skip
+
+
+def cl_sections(items1=None, items2=None, quote1=SCENARIO_1, quote2=SCENARIO_2):
+    return [
+        ("US1-AS1", quote1, [CL_ITEM_1] if items1 is None else items1),
+        ("US1-AS2", quote2, [CL_ITEM_2] if items2 is None else items2),
+    ]
+
+
+def cl_case(sections=None, other=None, text=None, **changes):
+    """valid-minimal with the marker and a checklist; ``text`` replaces the whole checklist file."""
+    if text is None:
+        text = checklist_text(sections if sections is not None else cl_sections(), [CL_ITEM_3] if other is None else other)
+    return with_checklist(text, **changes)
+
+
+def cl_edit(old, new, **changes):
+    """The valid checklist with one text change, for defects that checklist_text cannot express."""
+    base = checklist_text(cl_sections(), [CL_ITEM_3])
+    return with_checklist(swap(base, old, new), **changes)
+
+
+def cl_append(extra):
+    return with_checklist(checklist_text(cl_sections(), [CL_ITEM_3]) + extra)
+
+
+def with_item(item, **changes):
+    return dict(item, **changes)
+
+
+CASES["checklist-valid"] = cl_case
+
+
+@case("checklist-by-file")
+def _checklist_by_file():
+    # The checklist file without the marker still switches the rules on: FR-003 is named by no item.
+    files = variant()
+    files["tests/behaviour-checklist.md"] = checklist_text(cl_sections())
+    return files
+
+
+@case("checklist-missing")
+def _checklist_missing():
+    return with_checklist()
+
+
+@case("b1-fr")
+def _b1_fr():
+    return cl_case(other=[])
+
+
+@case("b1-scenario")
+def _b1_scenario():
+    # US1-AS2 has no section and no item that names it.
+    moved = with_item(CL_ITEM_2, expresses=["FR-002", "SC-001"])
+    return cl_case(sections=cl_sections()[:1], other=[moved, CL_ITEM_3])
+
+
+@case("b2-no-link")
+def _b2_no_link():
+    # BI-004 repeats VO-001's behaviour only to keep B3 quiet.
+    empty = with_item(CL_ITEM_3, verified=[])
+    return cl_case(other=[empty, bi("BI-004", ["FR-001"], ["VO-001"], CL_ITEM_1["clauses"])])
+
+
+@case("b2-unknown-vo")
+def _b2_unknown_vo():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, verified=["VO-001", "VO-099"])]))
+
+
+@case("b2-unknown-exemption")
+def _b2_unknown_exemption():
+    return cl_case(other=[with_item(CL_ITEM_3, verified=["exemption FR-099"])])
+
+
+@case("b3-unnamed")
+def _b3_unnamed():
+    return cl_case(sections=cl_sections(items2=[with_item(CL_ITEM_2, verified=["VO-001"])]))
+
+
+@case("b4-bad-id")
+def _b4_bad_id():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, id="BI-1")]))
+
+
+@case("b4-duplicate-id")
+def _b4_duplicate_id():
+    return cl_case(other=[with_item(CL_ITEM_3, id="BI-001")])
+
+
+@case("b4-empty-expresses")
+def _b4_empty_expresses():
+    return cl_case(other=[with_item(CL_ITEM_3, expresses=[])])
+
+
+@case("b4-missing-then")
+def _b4_missing_then():
+    return cl_case(sections=cl_sections(items2=[with_item(CL_ITEM_2, clauses=CL_ITEM_2["clauses"][:2])]))
+
+
+@case("b4-repeated-when")
+def _b4_repeated_when():
+    clauses = CL_ITEM_2["clauses"]
+    return cl_case(
+        sections=cl_sections(items2=[with_item(CL_ITEM_2, clauses=clauses[:2] + [("When", "again")] + clauses[2:])])
+    )
+
+
+@case("b4-out-of-order")
+def _b4_out_of_order():
+    given, when, then = CL_ITEM_2["clauses"]
+    return cl_case(sections=cl_sections(items2=[with_item(CL_ITEM_2, clauses=[when, given, then])]))
+
+
+@case("b4-outside-section")
+def _b4_outside_section():
+    stray = (
+        "- **BI-009** Expresses: FR-001. Verified by: VO-001.\n"
+        "  - **Given** an empty cart\n  - **When** the shopper asks for the total\n  - **Then** the total is zero\n\n"
+    )
+    base = checklist_text(cl_sections(), [CL_ITEM_3])
+    # The stray item sits between the title and the first section.
+    return with_checklist(swap(base, "## US1-AS1", stray + "## US1-AS1"))
+
+
+@case("b4-unknown-heading")
+def _b4_unknown_heading():
+    return cl_append("\n## Notes\n\nSomething else.\n")
+
+
+@case("b4-empty-section")
+def _b4_empty_section():
+    # US1-AS2 has a section and no item; its item sits under Other behaviours without naming the scenario.
+    moved = with_item(CL_ITEM_2, expresses=["FR-002", "SC-001"])
+    return cl_case(sections=cl_sections(items2=[]), other=[moved, CL_ITEM_3])
+
+
+@case("b4-checkbox")
+def _b4_checkbox():
+    return cl_append("\n- [ ] reviewed\n")
+
+
+@case("b4-status")
+def _b4_status():
+    return cl_append("\nStatus: draft\n")
+
+
+SPEC_NAMES_PATH = swap(SPEC, "- A price of zero is allowed.", "- A price of zero is allowed.\n- The totals are also written to out/totals.csv.")
+TASKS_NAME_SUBTOTAL = swap(
+    TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total with a subtotal in src/cart.py"
+)
+TASKS_NAME_CART_TOTAL = swap(
+    TASKS, "Implement the empty cart total in src/cart.py", "Implement the empty cart total as cart_total() in src/cart.py"
+)
+
+
+def then_clause(item, text):
+    return with_item(item, clauses=item["clauses"][:2] + [("Then", text)])
+
+
+@case("b5-path")
+def _b5_path():
+    return cl_case(sections=cl_sections(items1=[then_clause(CL_ITEM_1, "src/cart.py returns 0")]))
+
+
+@case("b5-identifier")
+def _b5_identifier():
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "cart_total() is called"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]), tasks=TASKS_NAME_CART_TOTAL)
+
+
+@case("b5-backticked")
+def _b5_backticked():
+    return cl_case(
+        sections=cl_sections(items1=[then_clause(CL_ITEM_1, "the `subtotal` is zero")]), tasks=TASKS_NAME_SUBTOTAL
+    )
+
+
+@case("b5-spec-names-path")
+def _b5_spec_names_path():
+    return cl_case(sections=cl_sections(items1=[then_clause(CL_ITEM_1, "out/totals.csv holds zero")]), spec=SPEC_NAMES_PATH)
+
+
+@case("b5-identifier-not-in-design")
+def _b5_identifier_not_in_design():
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "the shopper calls cart_total()"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]))
+
+
+@case("b6-unknown-fr")
+def _b6_unknown_fr():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "FR-099", "US1-AS1"])]))
+
+
+@case("b6-unknown-ec")
+def _b6_unknown_ec():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS1", "EC-99"])]))
+
+
+@case("b6-unknown-prefix")
+def _b6_unknown_prefix():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS1", "XY-001"])]))
+
+
+@case("b6-unknown-section")
+def _b6_unknown_section():
+    stray = bi("BI-004", ["US9-AS9"], ["VO-001"], CL_ITEM_1["clauses"])
+    return cl_case(sections=cl_sections() + [("US9-AS9", "Given a thing, When it happens, Then it ends.", [stray])])
+
+
+@case("b6-duplicate-section")
+def _b6_duplicate_section():
+    again = bi("BI-004", ["US1-AS1"], ["VO-001"], CL_ITEM_1["clauses"])
+    return cl_case(sections=cl_sections() + [("US1-AS1", SCENARIO_1, [again])])
+
+
+@case("b6-no-quote")
+def _b6_no_quote():
+    return cl_case(sections=cl_sections(quote1=None))
+
+
+@case("b6-quote-differs")
+def _b6_quote_differs():
+    return cl_case(sections=cl_sections(quote1=SCENARIO_1.replace("zero", "nil")))
+
+
+@case("b6-quote-emphasis-only")
+def _b6_quote_emphasis_only():
+    return cl_case(sections=cl_sections(quote1="Given an empty cart,\nWhen it is totalled,\nThen the total is zero."))
+
+
+@case("b6-wrong-scenario")
+def _b6_wrong_scenario():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS2"])]))
+
+
+@case("b6-two-scenarios")
+def _b6_two_scenarios():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS1", "US1-AS2"])]))
+
+
+@case("b6-other-names-scenario")
+def _b6_other_names_scenario():
+    return cl_case(other=[with_item(CL_ITEM_3, expresses=["FR-003", "US1-AS1"])])
+
+
+@case("b7-untraced-test-task")
+def _b7_untraced_test_task():
+    # Nothing names VO-001, so the test task T011 that names only VO-001 is untraced.
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, verified=["VO-002"])]))
+
+
+@case("checklist-and-plan-findings")
+def _checklist_and_plan_findings():
+    plan = swap(PLAN, "| FR-002, US1-AS2, SC-001, DC-01, EC-01 |", "| FR-002, US1-AS2, SC-001, DC-01, EC-01, FR-077 |")
+    return cl_case(other=[], plan=plan)
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
