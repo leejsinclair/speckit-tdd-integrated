@@ -1075,6 +1075,122 @@ def _evidence_both():
 
 
 # ---------------------------------------------------------------------------
+# Checklist parser cases (T008)
+# ---------------------------------------------------------------------------
+
+SPEC_WRAPPED = swap(
+    SPEC,
+    "2. **Given** a cart with two items, **When** it is totalled, **Then** the total is their sum.",
+    "2. **Given** a cart with two items,\n   **When** it is totalled,\n   **Then** the total is their sum.",
+)
+SCENARIO_1 = "**Given** an empty cart, **When** it is totalled, **Then** the total is zero."
+SCENARIO_2 = "**Given** a cart with two items, **When** it is totalled, **Then** the total is their sum."
+
+
+def bi(ident, expresses, verified, clauses):
+    return {"id": ident, "expresses": expresses, "verified": verified, "clauses": clauses}
+
+
+ITEM_EMPTY = bi(
+    "BI-001", ["FR-001", "US1-AS1"], ["VO-001"],
+    [("Given", "an empty cart"), ("When", "the shopper asks for the total"), ("Then", "the total is zero"),
+     ("And", "no error is shown")],
+)  # fmt: skip
+ITEM_SUM = bi(
+    "BI-002", ["FR-002", "US1-AS2"], ["VO-002"],
+    [("Given", "a cart with two items priced 3 and 4"), ("When", "the shopper asks for the total"),
+     ("Then", "the total is 7")],
+)  # fmt: skip
+ITEM_OTHER = bi(
+    "BI-003", ["FR-003", "EC-01"], ["VO-002", "exemption FR-003"],
+    [("Given", "an item priced 0"), ("When", "the cart is totalled"), ("Then", "the zero price is accepted")],
+)  # fmt: skip
+
+
+def full_checklist():
+    text = checklist_text(
+        [("US1-AS1: empty cart", SCENARIO_1, [ITEM_EMPTY]), ("US1-AS2", SCENARIO_2, [ITEM_SUM])],
+        other=[ITEM_OTHER],
+    )
+    return text + "\n```markdown\n- **BI-099** Expresses: FR-001. Verified by: VO-001.\n- [ ] a checkbox in a fence\n```\n"
+
+
+@case("parse-checklist-full")
+def _parse_checklist_full():
+    return with_checklist(full_checklist(), spec=SPEC_WRAPPED)
+
+
+@case("parse-checklist-relinked")
+def _parse_checklist_relinked():
+    relinked = dict(ITEM_EMPTY, verified=["VO-001", "VO-002"])
+    return with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [relinked])]))
+
+
+@case("parse-checklist-same")
+def _parse_checklist_same():
+    return with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [ITEM_EMPTY])]))
+
+
+@case("parse-checklist-reworded")
+def _parse_checklist_reworded():
+    reworded = dict(ITEM_EMPTY, clauses=[("Given", "an empty basket")] + ITEM_EMPTY["clauses"][1:])
+    return with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [reworded])]))
+
+
+@case("parse-checklist-quote-emphasis")
+def _parse_checklist_quote_emphasis():
+    quote = "Given an empty cart,\nWhen it is totalled,\nThen the total is zero."
+    return with_checklist(checklist_text([("US1-AS1", quote, [ITEM_EMPTY])]))
+
+
+@case("parse-checklist-marker-only")
+def _parse_checklist_marker_only():
+    return with_checklist()
+
+
+@case("parse-checklist-file-only")
+def _parse_checklist_file_only():
+    files = variant()
+    files["tests/behaviour-checklist.md"] = checklist_text([("US1-AS1", SCENARIO_1, [ITEM_EMPTY])])
+    return files
+
+
+@case("parse-checklist-malformed")
+def _parse_checklist_malformed():
+    text = (
+        "# Behaviour Checklist\n\n- **BI-1** Expresses: . Verified by: .\n  - **Then** first\n"
+        "## Mystery\n\n- [x] done\nStatus: ok\n## US9-AS9\n> \n- **BI-001** Expresses: FR-001\n  - **Maybe** x\n"
+    )
+    return with_checklist(text)
+
+
+def item_tables(baseline_rows, change_rows):
+    return (
+        "\n## Behaviour items at baseline\n\n"
+        + table(["Item", "Verified by", "Fingerprint", "Seq"], baseline_rows)
+        + "\n## Behaviour item changes\n\n"
+        + table(
+            ["ID", "Time", "Item", "Requirements", "Justification", "Alters behaviour", "Approved by",
+             "New fingerprint"],
+            change_rows,
+        )
+    )  # fmt: skip
+
+
+@case("parse-checklist-evidence")
+def _parse_checklist_evidence():
+    files = with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [ITEM_EMPTY])]))
+    baseline_rows = [{"Item": "BI-001", "Verified by": "VO-001", "Fingerprint": "a1b2c3", "Seq": "1"}]
+    change_rows = [
+        {"ID": "BX-01", "Time": stamp(31), "Item": "BI-001", "Requirements": "FR-001, US1-AS1",
+         "Justification": "The outcome was mistyped", "Alters behaviour": "yes", "Approved by": "Lee",
+         "New fingerprint": "d4e5f6"},
+    ]  # fmt: skip
+    files["tdd-evidence.md"] += item_tables(baseline_rows, change_rows)
+    return files
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):

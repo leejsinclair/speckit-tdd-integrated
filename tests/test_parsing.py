@@ -306,3 +306,195 @@ class EvidenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# The behaviour checklist (contracts/behaviour-checklist.md sections 2 and 3)
+# ---------------------------------------------------------------------------
+
+import hashlib  # noqa: E402
+import os  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+from support import FEATURES  # noqa: E402
+
+SCENARIO_2_TEXT = "Given a cart with two items, When it is totalled, Then the total is their sum."
+
+
+def checklist(case):
+    return parse("parse_checklist", case, os.path.join("tests", "behaviour-checklist.md"))
+
+
+def independent_fingerprint(clauses):
+    """First six hex characters of SHA-256 over '<keyword> <text>' per clause, joined by line breaks."""
+    text = "\n".join(f"{keyword} {words}" for keyword, words in clauses)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
+
+
+class ScenarioTextTests(unittest.TestCase):
+    def test_scenario_text_is_read_from_the_specification(self):
+        spec = parse("parse_spec", "parse-checklist-full", "spec.md")
+        normalise = parser_function("normalise")
+        self.assertEqual(
+            normalise(spec.scenario_text["US1-AS1"]),
+            "Given an empty cart, When it is totalled, Then the total is zero.",
+        )
+
+    def test_indented_continuation_lines_are_part_of_the_text(self):
+        spec = parse("parse_spec", "parse-checklist-full", "spec.md")
+        self.assertEqual(parser_function("normalise")(spec.scenario_text["US1-AS2"]), SCENARIO_2_TEXT)
+
+    def test_the_list_number_is_not_part_of_the_text(self):
+        spec = parse("parse_spec", "valid-minimal", "spec.md")
+        self.assertFalse(spec.scenario_text["US1-AS1"].lstrip().startswith("1."))
+        self.assertEqual(sorted(spec.scenario_text), ["US1-AS1", "US1-AS2"])
+
+    def test_ids_are_unchanged(self):
+        spec = parse("parse_spec", "parse-checklist-full", "spec.md")
+        self.assertEqual(spec.scenario_ids, ["US1-AS1", "US1-AS2"])
+
+
+class NormaliseTests(unittest.TestCase):
+    def test_emphasis_quote_marks_and_line_breaks_are_removed(self):
+        normalise = parser_function("normalise")
+        text = "> **Given** a __cart__,\n> **When** it\n>   is totalled"
+        self.assertEqual(normalise(text), "Given a cart, When it is totalled")
+
+    def test_case_punctuation_and_wording_are_kept(self):
+        normalise = parser_function("normalise")
+        self.assertNotEqual(normalise("Total is zero."), normalise("total is zero."))
+        self.assertNotEqual(normalise("Total is zero."), normalise("Total is zero"))
+
+    def test_a_quote_and_its_scenario_that_differ_only_in_emphasis_and_breaks_normalise_alike(self):
+        spec = parse("parse_spec", "parse-checklist-full", "spec.md")
+        result = checklist("parse-checklist-quote-emphasis")
+        normalise = parser_function("normalise")
+        self.assertEqual(normalise(result.sections[0].quote), normalise(spec.scenario_text["US1-AS1"]))
+
+
+class ChecklistReadingTests(unittest.TestCase):
+    def setUp(self):
+        self.result = checklist("parse-checklist-full")
+
+    def test_nothing_is_reported_for_a_well_formed_checklist(self):
+        self.assertEqual(reasons(self.result.findings), [])
+
+    def test_sections_are_read_in_order(self):
+        self.assertEqual(
+            [(section.kind, section.heading) for section in self.result.sections],
+            [("scenario", "US1-AS1"), ("scenario", "US1-AS2"), ("other", "Other behaviours")],
+        )
+
+    def test_a_scenario_heading_with_a_colon_suffix_has_the_id_before_the_colon(self):
+        self.assertEqual(self.result.sections[0].heading, "US1-AS1")
+
+    def test_the_quote_is_the_block_quote_under_the_heading(self):
+        self.assertIn("empty cart", self.result.sections[0].quote)
+        self.assertEqual(self.result.sections[2].quote, "")
+
+    def test_item_lines_are_read_with_both_lists(self):
+        items = {item.id: item for item in self.result.items}
+        self.assertEqual(sorted(items), ["BI-001", "BI-002", "BI-003"])
+        self.assertEqual(items["BI-001"].expresses, ["FR-001", "US1-AS1"])
+        self.assertEqual(items["BI-001"].verified_by, ["VO-001"])
+        self.assertEqual(items["BI-003"].expresses, ["FR-003", "EC-01"])
+        self.assertEqual(items["BI-003"].verified_by, ["VO-002", "exemption FR-003"])
+
+    def test_clauses_attach_to_the_nearest_item_above(self):
+        items = {item.id: item for item in self.result.items}
+        self.assertEqual(
+            items["BI-001"].clauses,
+            [
+                ("Given", "an empty cart"),
+                ("When", "the shopper asks for the total"),
+                ("Then", "the total is zero"),
+                ("And", "no error is shown"),
+            ],
+        )
+        self.assertEqual([keyword for keyword, _text in items["BI-002"].clauses], ["Given", "When", "Then"])
+
+    def test_items_know_their_section(self):
+        sections = {item.id: item.section for item in self.result.items}
+        self.assertEqual(sections, {"BI-001": "US1-AS1", "BI-002": "US1-AS2", "BI-003": "Other behaviours"})
+
+    def test_lines_inside_a_fenced_code_block_are_ignored(self):
+        self.assertNotIn("BI-099", [item.id for item in self.result.items])
+        self.assertEqual(reasons(self.result.findings), [])
+
+    def test_malformed_input_becomes_findings_and_never_raises(self):
+        result = checklist("parse-checklist-malformed")
+        found = reasons(result.findings)
+        self.assertGreater(len(found), 0)
+        self.assertTrue(all(line.startswith("B4 ") for line in found), found)
+        function = parser_function("parse_checklist")
+        texts = ("", "#", "## ", "- **BI-001**", "  - **Given** x", "> quote", "```\n")
+        for text in texts + ("## US1-AS1\n> a\n- **BI-001** Expresses",):
+            function(text)
+
+
+class FingerprintTests(unittest.TestCase):
+    def fingerprint(self, case):
+        result = checklist(case)
+        return parser_function("item_fingerprint")(result.items[0])
+
+    def test_fingerprint_is_six_hex_characters_over_the_normalised_clauses(self):
+        clauses = [
+            ("Given", "an empty cart"),
+            ("When", "the shopper asks for the total"),
+            ("Then", "the total is zero"),
+            ("And", "no error is shown"),
+        ]
+        value = self.fingerprint("parse-checklist-same")
+        self.assertRegex(value, r"^[0-9a-f]{6}$")
+        self.assertEqual(value, independent_fingerprint(clauses))
+
+    def test_it_is_unchanged_when_the_verified_by_list_changes(self):
+        self.assertEqual(self.fingerprint("parse-checklist-same"), self.fingerprint("parse-checklist-relinked"))
+
+    def test_it_changes_when_one_word_of_a_clause_changes(self):
+        self.assertNotEqual(self.fingerprint("parse-checklist-same"), self.fingerprint("parse-checklist-reworded"))
+
+
+class ApplicabilityTests(unittest.TestCase):
+    def applies(self, case):
+        applies = parser_function("checklist_applies")
+        return applies(os.path.join(FEATURES, case))
+
+    def test_the_marker_alone_switches_the_rules_on(self):
+        self.assertTrue(self.applies("parse-checklist-marker-only"))
+
+    def test_the_file_alone_switches_the_rules_on(self):
+        self.assertTrue(self.applies("parse-checklist-file-only"))
+
+    def test_neither_leaves_them_off(self):
+        self.assertFalse(self.applies("valid-minimal"))
+
+    def test_a_missing_directory_leaves_them_off(self):
+        folder = tempfile.mkdtemp(prefix="tdd-parse-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.assertFalse(parser_function("checklist_applies")(os.path.join(folder, "absent")))
+
+    def test_the_plan_parser_notes_the_marker(self):
+        self.assertTrue(parse("parse_plan", "parse-checklist-marker-only", "plan.md").has_checklist_marker)
+        self.assertFalse(parse("parse_plan", "valid-minimal", "plan.md").has_checklist_marker)
+
+
+class ItemEvidenceTests(unittest.TestCase):
+    def test_item_baseline_rows_are_read(self):
+        evidence = parse("parse_evidence", "parse-checklist-evidence", "tdd-evidence.md")
+        self.assertEqual(reasons(evidence.findings), [])
+        row = evidence.item_baseline[0]
+        self.assertEqual((row.item, row.verified_by, row.fingerprint, row.seq), ("BI-001", ["VO-001"], "a1b2c3", 1))
+
+    def test_item_change_records_are_read(self):
+        evidence = parse("parse_evidence", "parse-checklist-evidence", "tdd-evidence.md")
+        change = evidence.item_changes[0]
+        self.assertEqual((change.id, change.item, change.requirements), ("BX-01", "BI-001", ["FR-001", "US1-AS1"]))
+        self.assertTrue(change.alters_behaviour)
+        self.assertEqual((change.approved_by, change.new_fingerprint), ("Lee", "d4e5f6"))
+
+    def test_the_tables_are_empty_when_absent(self):
+        evidence = parse("parse_evidence", "valid-minimal", "tdd-evidence.md")
+        self.assertEqual(reasons(evidence.findings), [])
+        self.assertEqual((evidence.item_baseline, evidence.item_changes), ([], []))
