@@ -23,4 +23,6 @@ None. The story is ambiguous on purpose: "over 100" may or may not include 100, 
       is written.
 - [ ] No Decision is recorded in `tdd-evidence.md`: Decisions belong to the implementation
       stage, and this question was answered in planning.
+- [ ] The checklist has no item for the ambiguous requirement until the answer is recorded,
+      and then gains one that states the answered behaviour.
 - [ ] After the answer, `plan` and `tasks` exit 0 and the run is `COMPLIANT`.

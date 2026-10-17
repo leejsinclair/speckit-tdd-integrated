@@ -257,6 +257,92 @@ class EvidenceEditTests(SituationCase):
             self.assertIn("Evidence is written only by the check script", result.err, name)
 
 
+class PlanGuardTests(SituationCase):
+    """An edit that would remove a heading the checks read is refused (check-cli-changes.md section 5)."""
+
+    fixture = "checklist-valid"
+    HEADING_MESSAGE = (
+        "The Verification Plan and its Behaviour checklist sub-heading are read by the checks "
+        "and cannot be removed through the agent's edit tools"
+    )
+
+    def plan_text(self):
+        return read(self.feature(self.root), "plan.md")
+
+    def edit_plan(self, old, new):
+        return self.hook(self.payload("edit-plan.json", old_string=old, new_string=new))
+
+    def assert_heading_refused(self, result, heading):
+        self.assertEqual(result.code, 2, result)
+        self.assertEqual(result.out, "")
+        self.assertIn(self.HEADING_MESSAGE, " ".join(result.err.split()))
+        self.assertIn(heading, result.err)
+
+    def test_an_edit_removing_the_checklist_heading_is_refused(self):
+        result = self.edit_plan("### Behaviour checklist", "### Notes")
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_a_write_removing_the_checklist_heading_is_refused(self):
+        content = self.plan_text().replace("### Behaviour checklist", "### Notes")
+        result = self.hook(self.payload("write-plan.json", content=content))
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_a_multiedit_removing_the_checklist_heading_is_refused(self):
+        edits = [{"old_string": "### Behaviour checklist", "new_string": "### Notes", "replace_all": False}]
+        result = self.hook(self.payload("multiedit-plan.json", edits=edits))
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_an_edit_removing_the_verification_plan_heading_is_refused(self):
+        result = self.edit_plan("## Verification Plan", "## Testing notes")
+        self.assert_heading_refused(result, "## Verification Plan")
+
+    def test_recorded_edit_removing_the_checklist_heading_is_refused(self):
+        result = self.hook(load_payload("edit-plan-remove-checklist-heading.json", self.root))
+        self.assert_heading_refused(result, "### Behaviour checklist")
+
+    def test_recorded_edit_removing_the_verification_plan_heading_is_refused(self):
+        result = self.hook(load_payload("edit-plan-remove-verification-plan.json", self.root))
+        self.assert_heading_refused(result, "## Verification Plan")
+
+    def test_an_edit_that_rewords_text_and_keeps_both_headings_is_allowed(self):
+        self.assert_allowed(self.edit_plan("Add a cart total.", "Add the cart total."))
+        self.assert_allowed(self.hook(load_payload("edit-plan.json", self.root)))
+
+    def test_a_write_that_keeps_both_headings_is_allowed(self):
+        content = self.plan_text().replace("Add a cart total.", "Add the cart total.")
+        self.assert_allowed(self.hook(self.payload("write-plan.json", content=content)))
+
+    def test_adding_the_checklist_heading_to_a_plan_that_lacks_it_is_allowed(self):
+        write(self.root, ["specs", "001-demo", "plan.md"], PLAN_WITH_SECTION)
+        content = PLAN_WITH_SECTION + "\n### Behaviour checklist\n"
+        self.assert_allowed(self.hook(self.payload("write-plan.json", content=content)))
+
+    def test_an_older_plan_with_neither_heading_is_not_guarded(self):
+        write(self.root, ["specs", "001-demo", "plan.md"], "# Plan\n\n## Summary\n\nAdd a cart total.\n")
+        self.assert_allowed(self.edit_plan("Add a cart total.", "Add the cart total."))
+
+    def test_an_older_plan_with_the_verification_plan_cannot_lose_it_either(self):
+        write(self.root, ["specs", "001-demo", "plan.md"], PLAN_WITH_SECTION)
+        result = self.edit_plan("## Verification Plan", "## Testing notes")
+        self.assert_heading_refused(result, "## Verification Plan")
+
+    def test_an_edit_to_the_checklist_is_allowed_without_reading_any_artefact(self):
+        with open(os.path.join(self.feature(self.root), "plan.md"), "wb") as handle:
+            handle.write(b"\xff\xfe not text \xff")
+        self.assert_allowed(self.hook(load_payload("edit-checklist.json", self.root)))
+
+    def test_a_relative_path_is_guarded_too(self):
+        payload = self.payload(
+            "edit-plan.json", file_path="specs/001-demo/plan.md", old_string="### Behaviour checklist", new_string="x"
+        )
+        self.assert_heading_refused(self.hook(payload), "### Behaviour checklist")
+
+    def test_the_hook_changes_no_file(self):
+        before = snapshot(self.root)
+        self.edit_plan("### Behaviour checklist", "### Notes")
+        self.assertEqual(snapshot(self.root), before)
+
+
 class FailClosedTests(SituationCase):
     """The stop fails closed, for the two guarded files only."""
 
@@ -320,6 +406,70 @@ class AgentNeutralityTests(unittest.TestCase):
         self.assertNotIn("claude", outside)
         for name in OTHER_AGENT_NAMES:
             self.assertNotIn(name, source.lower())
+
+
+class NoToolingHookTests(SituationCase):
+    """The hook allows a task to be marked complete when the plan records no test tooling (FR-003)."""
+
+    fixture = "no-tooling-valid"
+
+    def test_a_test_task_can_be_marked_complete_with_no_evidence(self):
+        self.assert_allowed(self.edit("- [ ] T013", "- [X] T013"))
+
+    def test_a_behaviour_task_can_be_marked_complete_with_no_evidence(self):
+        self.assert_allowed(self.edit("- [ ] T014", "- [X] T014"))
+
+    def test_the_same_edit_is_refused_when_a_command_is_declared(self):
+        root = self.repo("valid-minimal")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T014", new_string="- [X] T014")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn(G3_T014, result.err.splitlines())
+
+    def test_an_open_decision_still_refuses_the_edit(self):
+        root = self.repo("no-tooling-open-decision")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T013", new_string="- [X] T013")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("G2 T013 DN-01: an open decision holds this task", result.err.splitlines())
+
+    def test_a_failing_checklist_still_refuses_the_edit(self):
+        root = self.repo("no-tooling-checklist-changed")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T015", new_string="- [X] T015")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("G11 T015 FR-004: B1: no behaviour item expresses it", result.err.splitlines())
+
+
+class DeferredHookTests(SituationCase):
+    """The hook holds a task for a deferral that waits for approval and names the way forward (FR-008A)."""
+
+    fixture = "deferred-waiting"
+
+    def test_a_task_held_by_g12_cannot_be_marked_complete(self):
+        result = self.edit("- [ ] T013", "- [X] T013")
+        self.assert_refused(result, "G12 T013 DF-01: needs approval and has no approver")
+
+    def test_the_refusal_names_how_to_approve(self):
+        err = " ".join(self.edit("- [ ] T013", "- [X] T013").err.split())
+        self.assertIn("A G12 finding means a deferral that does not rest on a recorded environment failure", err)
+        self.assertIn('approve --id <DF-nn> --by "<name>"', err)
+
+    def test_an_approved_deferral_lets_the_task_be_marked_complete(self):
+        root = self.repo("deferred-approved")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T013", new_string="- [X] T013")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assert_allowed(result)
+
+    def test_a_standing_deferral_on_an_environment_failure_lets_the_task_be_marked_complete(self):
+        root = self.repo("deferred-standing")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T014", new_string="- [X] T014")
+        self.assert_allowed(self.check(["hook"], root, stdin=json.dumps(payload)))
 
 
 if __name__ == "__main__":

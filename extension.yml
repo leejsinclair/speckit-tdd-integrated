@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: "integrated-tdd"
   name: "Integrated TDD"
-  version: "0.1.0"
+  version: "0.3.0"
   description: "Requirements-driven test-driven development inside the standard Spec Kit stages, with real test evidence and a hard stop on unverified tasks"
   category: "process"
   effect: "read-write"
@@ -25,6 +25,9 @@ provides:
     - name: "tdd-evidence-template"
       file: "templates/tdd-evidence-template.md"
       description: "Starting content of a feature's tdd-evidence.md"
+    - name: "behaviour-checklist-template"
+      file: "templates/behaviour-checklist-template.md"
+      description: "Starting content of a feature's tests/behaviour-checklist.md"
   scripts:
     - name: "tdd-check"
       file: "scripts/python/tdd_check.py"

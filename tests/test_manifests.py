@@ -9,7 +9,7 @@ import os
 import re
 import unittest
 
-from support import REPO
+from support import REPO, load_script
 
 GATE_COMMAND = "speckit.integrated-tdd.gate"
 RULES_FILE = os.path.join("templates", "tdd-process-rules.md")
@@ -65,7 +65,7 @@ class ExtensionManifestTests(unittest.TestCase):
 
     def test_every_extension_file_exists(self):
         entries = file_entries(read_repo("extension.yml"))
-        self.assertEqual(len(entries), 3)
+        self.assertEqual(len(entries), 4)
         for entry in entries:
             self.assertTrue(os.path.isfile(repo_path(entry)), "missing file: " + entry)
 
@@ -298,6 +298,515 @@ class AddendumTests(unittest.TestCase):
             text = read_repo("preset", "templates", name).lower()
             for tool in TOOL_NAMES + AGENT_NAMES:
                 self.assertNotIn(tool, text, name)
+
+
+CHECKLIST_TEMPLATE = os.path.join("templates", "behaviour-checklist-template.md")
+CHECKLIST_TEMPLATE_PATH = ".specify/extensions/integrated-tdd/templates/behaviour-checklist-template.md"
+CHECKLIST_LINK_LINE = "Behaviour items are in [tests/behaviour-checklist.md](tests/behaviour-checklist.md)."
+
+
+def flat(text):
+    """Text with every run of white space made one space, so a phrase can span a line break."""
+    return " ".join(text.split())
+
+
+class BehaviourChecklistTemplateTests(unittest.TestCase):
+    def test_extension_provides_the_template(self):
+        provides = top_level_block(read_repo("extension.yml"), "provides")
+        self.assertRegex(provides, r'(?m)^\s+- name:\s*"behaviour-checklist-template"\s*$')
+        self.assertIn('file: "templates/behaviour-checklist-template.md"', provides)
+        self.assertTrue(os.path.isfile(repo_path(CHECKLIST_TEMPLATE)))
+
+    def test_template_entry_follows_the_evidence_template_and_is_described(self):
+        text = read_repo("extension.yml")
+        self.assertLess(text.index('name: "tdd-evidence-template"'), text.index('name: "behaviour-checklist-template"'))
+        self.assertIn('description: "Starting content of a feature\'s tests/behaviour-checklist.md"', text)
+
+    def test_template_parses_into_one_scenario_section_and_one_other_section(self):
+        result = load_script().parse_checklist(read_repo(CHECKLIST_TEMPLATE))
+        self.assertEqual(result.findings, [])
+        self.assertEqual([section.kind for section in result.sections], ["scenario", "other"])
+        self.assertGreaterEqual(len(result.items), 2)
+
+    def test_template_holds_the_title_placeholder_and_the_explanatory_comment(self):
+        text = read_repo(CHECKLIST_TEMPLATE)
+        self.assertEqual(text.splitlines()[0], "# Behaviour Checklist: <feature directory name>")
+        comment = flat(text[text.index("<!--") : text.index("-->")])
+        for phrase in (
+            "Written by the plan stage",
+            "Read by tdd_check.py",
+            'One "## USn-ASm" section per acceptance scenario',
+            "word for word",
+            'One "## Other behaviours" section',
+            "They name no file, module, function, class, table, endpoint or screen component",
+            "No checkboxes and no status",
+        ):
+            self.assertIn(phrase, comment)
+
+    def test_template_links_the_three_documents(self):
+        text = read_repo(CHECKLIST_TEMPLATE)
+        for link in ("[spec.md](../spec.md)", "[plan.md](../plan.md#verification-plan)", "[tasks.md](../tasks.md)"):
+            self.assertIn(link, text)
+
+
+class BehaviourChecklistAddendumTests(unittest.TestCase):
+    def lines(self):
+        return [line.rstrip() for line in read_repo("preset", "templates", "plan-addendum.md").splitlines()]
+
+    def test_sub_heading_follows_the_exemptions_and_precedes_any_second_level_heading(self):
+        lines = self.lines()
+        self.assertIn("### Behaviour checklist", lines)
+        position = lines.index("### Behaviour checklist")
+        self.assertGreater(position, lines.index("### Verification exemptions"))
+        self.assertEqual([line for line in lines[position:] if line.startswith("## ")], [])
+        self.assertEqual(lines.count("### Behaviour checklist"), 1)
+
+    def test_sub_heading_is_followed_by_the_fixed_link_line(self):
+        text = read_repo("preset", "templates", "plan-addendum.md")
+        after = text.split("### Behaviour checklist", 1)[1]
+        self.assertIn(CHECKLIST_LINK_LINE, after)
+        self.assertIn("must be kept", flat(after))
+
+
+class BehaviourChecklistPlanWrapperTests(unittest.TestCase):
+    def step(self):
+        _text, _above, below = wrapper_parts("plan")
+        heading = re.search(r"(?m)^\d+\. \*\*Behaviour checklist\*\*", below)
+        self.assertIsNotNone(heading, "no Behaviour checklist step")
+        return flat(below[heading.start() :])
+
+    def test_step_follows_the_verification_plan_steps_and_precedes_the_check(self):
+        _text, _above, below = wrapper_parts("plan")
+        self.assertLess(below.index("**Verification exemptions**"), below.index("**Behaviour checklist**"))
+        self.assertLess(below.index("**Behaviour checklist**"), below.index("**Check**"))
+
+    def test_step_names_the_template_and_where_the_checklist_goes(self):
+        step = self.step()
+        self.assertIn(CHECKLIST_TEMPLATE_PATH, step)
+        self.assertIn("tests/behaviour-checklist.md", step)
+        self.assertIn("FEATURE_DIR", step)
+
+    def test_step_adds_the_sub_heading_when_the_plan_lacks_it(self):
+        step = self.step()
+        self.assertIn("### Behaviour checklist", step)
+        self.assertRegex(step, r"has no `### Behaviour checklist` sub-heading")
+
+    def test_step_follows_the_process_rules_section(self):
+        self.assertIn('"Behaviour checklist" in the process rules', self.step())
+
+    def test_the_check_is_the_plan_check_and_covers_the_checklist(self):
+        _text, _above, below = wrapper_parts("plan")
+        check = flat(below[below.index("**Check**") :])
+        self.assertRegex(check, r"tdd_check\.py plan")
+        self.assertIn("checklist", check)
+
+    def test_the_note_at_the_top_names_the_checklist_as_a_phase_1_output(self):
+        _text, above, _below = wrapper_parts("plan")
+        note = flat(above)
+        self.assertIn("behaviour checklist", note.lower())
+        self.assertIn("Phase 1 output", note)
+
+    def test_completion_report_names_the_location_and_asks_for_review_without_approval(self):
+        _text, _above, below = wrapper_parts("plan")
+        report = flat(below[below.rindex("In the Completion Report") :]).lower()
+        self.assertIn("tests/behaviour-checklist.md", report)
+        self.assertIn("number of sections and items", report)
+        self.assertIn("ask for the checklist to be reviewed against the specification", report)
+        self.assertIn("no approval is requested", report)
+        self.assertIn("nothing waits for one", report)
+
+
+class BehaviourChecklistRulesTests(unittest.TestCase):
+    def headings(self):
+        return [line for line in read_repo(RULES_FILE).splitlines() if line.startswith("## ")]
+
+    def section(self):
+        text = read_repo(RULES_FILE)
+        start = text.index("\n## Behaviour checklist\n")
+        end = text.index("\n## The Red, Green, Refactor cycle")
+        return flat(text[start:end])
+
+    def test_section_sits_between_verification_intent_and_the_cycle(self):
+        headings = self.headings()
+        self.assertIn("## Behaviour checklist", headings)
+        position = headings.index("## Behaviour checklist")
+        self.assertEqual(headings[position - 1], "## Verification intent")
+        self.assertEqual(headings[position + 1], "## The Red, Green, Refactor cycle")
+
+    def test_section_says_when_where_and_what(self):
+        section = self.section()
+        for phrase in (
+            "plan stage",
+            "tests/behaviour-checklist.md",
+            "never in `checklists/`",
+            "one section per acceptance scenario",
+            "word for word",
+            "Other behaviours",
+            "Given, When, Then",
+            "no checkbox",
+            "no status",
+        ):
+            self.assertIn(phrase, section)
+
+    def test_rules_name_both_evidence_locations_and_which_features_use_each(self):
+        text = flat(read_repo(RULES_FILE))
+        self.assertIn("`tdd-evidence.md`", text)
+        self.assertIn("`tests/tdd-evidence.md`", text)
+        self.assertIn("planned before", text)
+
+
+class ReviewingTheChecklistTests(unittest.TestCase):
+    def subsection(self):
+        text = read_repo(RULES_FILE)
+        start = text.index("\n### Reviewing the checklist\n")
+        end = text.index("\n## The Red, Green, Refactor cycle")
+        return flat(text[start:end])
+
+    def test_the_subsection_sits_inside_the_behaviour_checklist_section(self):
+        text = read_repo(RULES_FILE)
+        self.assertLess(text.index("\n## Behaviour checklist\n"), text.index("\n### Reviewing the checklist\n"))
+
+    def test_it_says_what_the_reviewer_compares_and_how(self):
+        found = self.subsection()
+        for phrase in (
+            "each scenario's quote against its items",
+            "every requirement is named",
+            "nothing goes beyond the specification",
+            "tdd_check.py status --scenarios",
+        ):
+            self.assertIn(phrase, found)
+
+    def test_it_sends_a_correction_through_the_specification_first(self):
+        found = self.subsection()
+        self.assertIn("a correction is made in `spec.md` or the Verification Plan first", found)
+        self.assertIn("and then carried into the checklist", found)
+
+    def test_it_says_review_is_asked_for_and_never_awaited(self):
+        found = self.subsection()
+        self.assertIn("asks for review and waits for no approval", found)
+
+    def test_the_plan_wrapper_completion_report_names_the_side_by_side_view(self):
+        _text, _above, below = wrapper_parts("plan")
+        report = flat(below[below.rindex("In the Completion Report") :])
+        self.assertIn("status --scenarios", report)
+
+
+class BehaviourItemGuidanceTests(unittest.TestCase):
+    def implement(self):
+        return flat(wrapper_parts("implement")[2])
+
+    def test_implement_wrapper_records_an_item_change_with_expectation_item(self):
+        found = self.implement()
+        self.assertIn("### A behaviour item changed after the baseline", found)
+        self.assertIn("tdd_check.py expectation --item <item id>", found)
+        self.assertIn("approval", found[found.index("### A behaviour item changed") :])
+
+    def test_implement_wrapper_approves_an_item_change_that_alters_behaviour(self):
+        section = self.implement()
+        section = section[section.index("### A behaviour item changed") :]
+        self.assertIn("alters intended behaviour", section)
+        self.assertIn("tdd_check.py approve --id <BX-nn>", section)
+        self.assertIn("Until then the item's tasks stay incomplete (G10)", section)
+
+    def test_implement_wrapper_explains_the_red_refusal(self):
+        found = self.implement()
+        self.assertIn("an obligation that no behaviour item names", found)
+        self.assertIn("add it to an existing or new item first", found)
+
+    def test_implement_wrapper_explains_a_g11_refusal(self):
+        found = self.implement()
+        self.assertIn("G11", found)
+        self.assertIn("correct the specification or the Verification Plan first and then the checklist", found)
+        self.assertIn("rerun `plan`", found)
+
+    def test_implement_end_of_stage_report_lists_behaviour_items_not_verified(self):
+        found = self.implement()
+        report = found[found.index("### End-of-stage report") :]
+        self.assertIn("every behaviour item that is not verified, with the reason", report)
+
+    def test_tasks_addendum_says_each_obligation_must_be_named_by_an_item(self):
+        text = flat(read_repo("preset", "templates", "tasks-addendum.md"))
+        self.assertIn("each obligation a test task names must be named by a behaviour item", text)
+
+    def test_rules_put_the_behaviour_item_in_the_traceability_chain(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("## Traceability and review evidence") :])
+        self.assertIn("requirement, behaviour item, obligation, task, test, record", section)
+        self.assertIn("linked to a behaviour item before its test is written", section)
+
+    def test_rules_say_how_items_are_fixed_and_changed(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("## Behaviour checklist") : text.index("## The Red, Green, Refactor cycle")])
+        self.assertIn("fixed from the first recorded run", section)
+        self.assertIn("expectation --item", section)
+        self.assertIn("approved when it alters behaviour", section)
+
+
+class FindingsFromTheHaikuRunsTests(unittest.TestCase):
+    """Guidance added after the Haiku runs of stories 07 and 08 (quickstart, T056)."""
+
+    def test_tasks_wrapper_stops_when_the_plan_check_fails(self):
+        found = flat(wrapper_parts("tasks")[0])
+        self.assertIn("run the `plan` check first", found)
+        self.assertRegex(found, r"tdd_check\.py plan")
+        self.assertIn("If it exits non-zero, stop", found)
+        self.assertIn("do not generate tasks while the plan check fails", found)
+        stop = found[found.index("If it exits non-zero, stop") :]
+        self.assertIn("__SPECKIT_COMMAND_PLAN__", stop[:400])
+
+    def test_tasks_wrapper_check_comes_after_the_older_feature_gaps_and_before_generation(self):
+        above = flat(wrapper_parts("tasks")[1])
+        gap = above.index("no `### Behaviour checklist` sub-heading")
+        self.assertLess(gap, above.index("run the `plan` check first"))
+
+    def test_rules_exempt_an_unchanged_behaviour_requirement_that_has_no_way_to_vary(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("**Ambiguity.**") : text.index("**Verification commands.**")])
+        self.assertIn("states that existing behaviour stays unchanged", section)
+        self.assertIn("gives no way to vary that behaviour", section)
+        self.assertIn("exemption", section)
+        self.assertIn("unchanged by construction", section)
+        self.assertIn("in the Completion Report", section)
+
+
+class UnchangedByConstructionStepTests(unittest.TestCase):
+    """The plan wrapper applies the rule at the step that writes obligations (found in the one-off Sonnet runs)."""
+
+    def steps(self):
+        below = wrapper_parts("plan")[2]
+        start = below.index("**Verification obligations**")
+        return flat(below[start : below.index("**Behaviour checklist**")])
+
+    def test_the_obligations_and_exemptions_steps_state_the_rule(self):
+        found = self.steps()
+        self.assertIn("states that existing behaviour stays unchanged", found)
+        self.assertIn("gives no way to vary it", found)
+        self.assertIn("write no obligation for it", found)
+        self.assertIn("unchanged by construction", found)
+
+    def test_it_asks_for_an_exemption_and_an_item_and_a_note_in_the_report(self):
+        found = self.steps()
+        self.assertIn("a requirement or an edge case", found)
+        self.assertIn("a behaviour item whose Verified by is that exemption", found)
+        self.assertIn("name it in the Completion Report so the developer can overrule it", found)
+
+    def test_it_does_not_put_the_question_to_the_developer(self):
+        self.assertIn("do not put it to the developer as an ambiguity", self.steps())
+
+    def test_it_applies_only_when_the_change_adds_no_way_to_vary_the_behaviour(self):
+        self.assertIn("if the change does add a way to vary it, write an obligation as usual", self.steps())
+
+
+class EdgeCaseLabelTests(unittest.TestCase):
+    """The plan wrapper says what to do when the specification's edge cases carry no ids."""
+
+    def step(self):
+        below = wrapper_parts("plan")[2]
+        start = below.index("**Edge case labels**")
+        return flat(below[start : below.index("**Verification obligations**")])
+
+    def test_step_comes_after_the_commands_and_before_the_obligations_that_cite_the_labels(self):
+        below = wrapper_parts("plan")[2]
+        self.assertLess(below.index("**Verification commands**"), below.index("**Edge case labels**"))
+        self.assertLess(below.index("**Edge case labels**"), below.index("**Verification obligations**"))
+
+    def test_it_labels_unnumbered_edge_cases_in_the_specification_without_changing_wording(self):
+        step = self.step()
+        self.assertIn("edge cases carry no ids", step)
+        self.assertIn("`EC-01`, `EC-02`", step)
+        self.assertIn("in FEATURE_SPEC", step)
+        self.assertIn("change no other word", step)
+
+    def test_it_says_to_report_the_labels_and_never_to_invent_an_id(self):
+        step = self.step()
+        self.assertIn("name the labels in the Completion Report", step)
+        self.assertIn("never name an `EC-` id that FEATURE_SPEC does not hold", step)
+
+    def test_the_rules_say_the_same(self):
+        text = read_repo(RULES_FILE)
+        section = flat(text[text.index("## Verification intent") : text.index("## Behaviour checklist")])
+        self.assertIn("edge cases carry no ids", section)
+
+
+GAP_PHRASE = "no `### Behaviour checklist` sub-heading"
+
+
+class OlderFeatureGapTests(unittest.TestCase):
+    """Each later stage reports the checklist gap of a feature planned before it existed."""
+
+    def gap(self, stage):
+        text, _above, _below = wrapper_parts(stage)
+        found = flat(text)
+        self.assertIn(GAP_PHRASE, found, stage)
+        start = found.index(GAP_PHRASE)
+        return found[max(0, start - 300) : start + 700]
+
+    def test_tasks_analyze_and_implement_each_describe_the_gap(self):
+        for stage in ("tasks", "analyze", "implement"):
+            with self.subTest(stage=stage):
+                gap = self.gap(stage)
+                self.assertIn("__SPECKIT_COMMAND_PLAN__", gap)
+                self.assertIn("gap", gap)
+                self.assertIn("Verification Plan", gap)
+
+    def test_the_gap_is_reported_at_the_start_and_in_the_final_report(self):
+        for stage, report in (("tasks", "Completion Report"), ("implement", "Completion Report")):
+            with self.subTest(stage=stage):
+                self.assertIn("now and again in the " + report, self.gap(stage))
+        self.assertIn("at the start of the analysis report and again in its summary", self.gap("analyze"))
+
+    def test_the_gap_does_not_stop_the_stage(self):
+        for stage in ("tasks", "analyze", "implement"):
+            with self.subTest(stage=stage):
+                self.assertIn("carry on", self.gap(stage))
+
+    def test_tasks_wrapper_names_b7_and_the_checklist_finding(self):
+        text = flat(wrapper_parts("tasks")[2])
+        check = text[text.index("**Check**") :]
+        self.assertIn("B7", check)
+        self.assertIn("CHECKLIST", check)
+
+    def test_analyze_wrapper_describes_b1_to_b7_and_still_modifies_nothing(self):
+        _text, _above, below = wrapper_parts("analyze")
+        found = flat(below)
+        self.assertIn("B1 to B7", found)
+        self.assertIn("**Modify nothing.**", found)
+        self.assertIn("Do not correct `plan.md`, `tasks.md` or the behaviour checklist here", found)
+
+    def test_implement_wrapper_says_the_baseline_is_refused_while_the_checklist_fails(self):
+        _text, _above, below = wrapper_parts("implement")
+        found = flat(below)
+        self.assertIn("the baseline is refused while the checklist fails", found)
+        self.assertIn("a refusal means returning to the plan stage", found)
+
+    def test_implement_wrapper_names_both_evidence_locations(self):
+        text = flat(wrapper_parts("implement")[0])
+        self.assertIn("`tdd-evidence.md`", text)
+        self.assertIn("`tests/tdd-evidence.md`", text)
+        _text, _above, below = wrapper_parts("implement")
+        self.assertIn("`tests/tdd-evidence.md`", flat(below))
+
+
+class WhenVerificationIsNotPossibleTests(unittest.TestCase):
+    """The addendum, the process rules and the four wrappers describe the 0.3.0 states (T021, FR-006, FR-021)."""
+
+    def addendum(self):
+        return read_repo("preset", "templates", "plan-addendum.md")
+
+    def rules_section(self):
+        text = read_repo(RULES_FILE)
+        self.assertIn("\n## When verification is not possible\n", text)
+        start = text.index("\n## When verification is not possible\n")
+        end = text.find("\n## ", start + 5)
+        return flat(text[start : end if end != -1 else len(text)])
+
+    def test_addendum_holds_the_manual_verification_table_after_the_exemptions(self):
+        lines = [line.rstrip() for line in self.addendum().splitlines()]
+        self.assertIn("### Manual verification", lines)
+        self.assertIn("| ID | Covers | Steps | Expected result | Why not automated |", lines)
+        heading = lines.index("### Manual verification")
+        self.assertGreater(heading, lines.index("### Verification exemptions"))
+        self.assertLess(heading, lines.index("### Behaviour checklist"))
+        self.assertTrue(any(line.startswith("| None |") for line in lines[heading:]))
+
+    def test_addendum_says_the_heading_is_read_and_a_project_without_tests_writes_none(self):
+        text = flat(self.addendum())
+        self.assertIn("This heading is read by the checks", text)
+        self.assertRegex(text, r"no (way to run tests|runnable test command).{0,80}single `None` row")
+
+    def test_the_evidence_template_holds_neither_new_table(self):
+        text = read_repo("templates", "tdd-evidence-template.md")
+        self.assertNotIn("## Deferrals", text)
+        self.assertNotIn("## Manual results", text)
+
+    def test_rules_section_follows_the_exceptions_and_covers_the_three_cases(self):
+        text = read_repo(RULES_FILE)
+        self.assertLess(text.index("### An exception to the cycle"), text.index("## When verification is not possible"))
+        section = self.rules_section().lower()
+        for phrase in ("no test tooling", "deferral", "manual check", "who may defer", "never chooses or installs"):
+            self.assertIn(phrase, section)
+
+    def test_rules_say_nothing_deferred_or_manual_is_reported_as_verified(self):
+        section = self.rules_section()
+        self.assertRegex(section, r"[Nn]othing deferred or manual is reported as verified")
+        self.assertIn("a person's", section)
+
+    def test_plan_wrapper_writes_the_none_row_says_so_and_carries_on(self):
+        _text, _above, below = wrapper_parts("plan")
+        step = flat(below[below.index("1. **Verification commands**") : below.index("2. **Edge case labels**")])
+        self.assertIn("`None` row", step)
+        self.assertIn("no test tooling", step)
+        self.assertIn("never chooses a framework", step)
+        self.assertIn("carry on", step)
+        self.assertNotIn("leave the table empty", step)
+        self.assertNotIn("gap to resolve", step)
+
+    def test_plan_wrapper_has_a_manual_verification_step_after_the_exemptions(self):
+        _text, _above, below = wrapper_parts("plan")
+        self.assertRegex(below, r"(?m)^\d+\. \*\*Manual verification\*\*")
+        self.assertLess(below.index("**Verification exemptions**"), below.index("**Manual verification**"))
+        self.assertLess(below.index("**Manual verification**"), below.index("**Behaviour checklist**"))
+
+    def test_plan_wrapper_check_no_longer_blames_a_missing_command(self):
+        _text, _above, below = wrapper_parts("plan")
+        check = flat(below[below.index("**Check**") :])
+        self.assertNotIn("a project with no test command", check)
+
+    def test_plan_wrapper_completion_report_counts_obligations_and_manual_checks(self):
+        _text, _above, below = wrapper_parts("plan")
+        report = flat(below[below.rindex("In the Completion Report") :]).lower()
+        self.assertIn("manual checks", report)
+        self.assertIn("no test tooling", report)
+
+    def test_tasks_wrapper_passes_a_plan_recording_no_test_tooling_and_reports_it(self):
+        text, _above, _below = wrapper_parts("tasks")
+        text = flat(text)
+        self.assertIn("no test tooling", text)
+        self.assertIn("nothing is verified by tests", text)
+
+    def test_implement_wrapper_names_defer_manual_no_tooling_mode_and_the_counts(self):
+        text, _above, _below = wrapper_parts("implement")
+        text = flat(text)
+        for phrase in (
+            "tdd_check.py defer",
+            "tdd_check.py manual",
+            "no-tooling mode",
+            "classify",
+            "deferred",
+            "manual checks",
+        ):
+            self.assertIn(phrase, text)
+        self.assertRegex(text, r"never choose.{0,40}framework")
+
+    def test_analyze_wrapper_names_the_new_rules_and_the_notices(self):
+        text, _above, _below = wrapper_parts("analyze")
+        text = flat(text)
+        for rule in ("M1", "M2", "G12", "C9"):
+            self.assertIn(rule, text)
+        self.assertIn("notice", text)
+
+    def test_no_new_text_names_a_framework(self):
+        texts = [self.addendum(), self.rules_section()]
+        texts += [wrapper_parts(stage)[0] for stage in ("plan", "tasks", "analyze", "implement")]
+        for text in texts:
+            for name in TOOL_NAMES:
+                self.assertNotIn(name, text.lower())
+
+
+class ReleaseVersionTests(unittest.TestCase):
+    """The release is 0.3.0 and the documents that name the version agree (T033)."""
+
+    def test_both_manifests_are_version_0_3_0(self):
+        for name in ("extension.yml", "preset.yml"):
+            self.assertEqual(version_of(read_repo(name)), "0.3.0", name)
+
+    def test_the_readme_names_the_0_3_0_tag_and_no_other(self):
+        text = read_repo("README.md")
+        self.assertIn("v0.3.0", text)
+        self.assertNotIn("v0.2.0", text)
+
+    def test_the_changelog_has_a_0_3_0_entry(self):
+        self.assertRegex(read_repo("CHANGELOG.md"), r"(?m)^### 0\.3\.0\n\n\S")
 
 
 if __name__ == "__main__":

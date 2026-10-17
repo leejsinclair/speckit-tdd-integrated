@@ -4,7 +4,7 @@ import json
 import os
 import unittest
 
-from support import RepoCase, snapshot
+from support import RepoCase, load_payload, snapshot
 
 
 class GateCase(RepoCase):
@@ -316,6 +316,200 @@ class GateAllTests(GateCase):
         self.assertEqual([item["task"] for item in data["incomplete"]], ["T013", "T014"])
         self.assertFalse(data["incomplete"][0]["would_pass"])
         self.assertEqual(data["incomplete"][0]["findings"][0]["rule"], "G3")
+
+
+class G11Tests(GateCase):
+    """G11: the checklist rules, applied to every task once the baseline is recorded."""
+
+    B1 = "G11 {task} FR-004: B1: no behaviour item expresses it"
+    B5 = "G11 {task} BI-001: B5: `src/cart.py` is a path-shaped token that spec.md does not name"
+
+    def item_lines(self, fixture, *args):
+        result = self.gate(fixture, *args)
+        return result, [line for line in result.out.splitlines() if line.startswith(("G10 ", "G11 "))]
+
+    def test_a_requirement_added_after_the_baseline_holds_every_task(self):
+        for task in ("T014", "T015"):
+            with self.subTest(task=task):
+                result, lines = self.item_lines("g11-requirement-added", "--task", task)
+                self.assertEqual(lines, [self.B1.format(task=task)])
+                self.assertEqual(result.code, 1, result)
+
+    def test_a_broken_item_holds_every_task_including_a_no_test_task(self):
+        for task in ("T014", "T015"):
+            with self.subTest(task=task):
+                result, lines = self.item_lines("g11-item-broken", "--task", task)
+                self.assertEqual(lines, [self.B5.format(task=task)])
+
+    def test_nothing_is_reported_before_the_baseline(self):
+        result, lines = self.item_lines("g11-before-baseline", "--task", "T014")
+        self.assertEqual(lines, [], result.out)
+
+    def test_nothing_is_reported_for_a_passing_checklist(self):
+        result, lines = self.item_lines("items-baseline", "--task", "T014")
+        self.assertEqual((lines, result.code), ([], 0))
+
+    def test_gate_all_reports_g11_for_completed_tasks(self):
+        root = self.repo("g11-requirement-added")
+        path = os.path.join(root, "specs", "001-demo", "tasks.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("- [ ] T015", "- [X] T015"))
+        result = self.check(["gate", "--all"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(self.B1.format(task="T015"), result.out.splitlines())
+
+    def test_the_refusal_names_the_way_forward_for_a_checklist_finding(self):
+        root = self.repo("g11-requirement-added")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T015", new_string="- [X] T015")
+        err = " ".join(self.check(["hook"], root, stdin=json.dumps(payload)).err.split())
+        self.assertIn("return to the plan stage", err)
+        self.assertIn("specification or the Verification Plan first and then the checklist", err)
+
+    def test_the_hook_refuses_to_mark_complete_a_task_held_by_g11(self):
+        root = self.repo("g11-requirement-added")
+        payload = json.loads(load_payload("edit-tasks.json", root))
+        payload["tool_input"].update(old_string="- [ ] T015", new_string="- [X] T015")
+        result = self.check(["hook"], root, stdin=json.dumps(payload))
+        self.assertEqual(result.code, 2, result)
+        self.assertIn(self.B1.format(task="T015"), result.err.splitlines())
+
+
+class NoToolingGateTests(GateCase):
+    """In no-tooling mode no rule needs a run (research D2, D4; FR-003, FR-005, SC-004)."""
+
+    def test_gate_all_passes_with_every_task_complete_and_no_evidence(self):
+        result = self.gate("no-tooling-complete", "--all")
+        self.assertEqual((result.code, result.out, result.err), (0, "gate: passed, 5 completed tasks\n", ""))
+
+    def test_every_test_and_behaviour_task_passes_on_its_own(self):
+        for task in ("T011", "T012", "T013", "T014", "T015"):
+            with self.subTest(task=task):
+                self.assert_passes("no-tooling-complete", task)
+
+    def test_an_open_decision_still_holds_a_task(self):
+        self.assert_fails("no-tooling-open-decision", "T013", "G2 T013 DN-01: an open decision holds this task")
+
+    def test_a_task_the_decision_does_not_list_still_passes(self):
+        self.assert_passes("no-tooling-open-decision", "T012")
+
+    def test_a_failing_checklist_holds_a_task_with_no_baseline_recorded(self):
+        for task in ("T014", "T015"):
+            with self.subTest(task=task):
+                self.assert_fails(
+                    "no-tooling-checklist-changed", task, f"G11 {task} FR-004: B1: no behaviour item expresses it"
+                )
+
+    def test_a_passing_checklist_holds_nothing(self):
+        root = self.repo("no-tooling-complete")
+        self.assertEqual(self.check(["gate", "--task", "T014"], root).code, 0)
+
+    def test_the_same_feature_with_a_command_declared_holds_the_same_tasks(self):
+        root = self.repo("no-tooling-complete")
+        path = os.path.join(self.feature(root), "plan.md")
+        with open(path) as handle:
+            text = handle.read()
+        commands = (
+            "| unit | `sh tests/fixtures/bin/fake_test.sh {select}` | focused | tests/fixtures/bin |\n"
+            "| suite | `sh tests/fixtures/bin/fake_test.sh pass` | broad | tests/fixtures/bin |\n"
+        )
+        self.assertIn("| None | - | - | - |\n", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| None | - | - | - |\n", commands))
+        result = self.check(["gate", "--all"], root)
+        self.assertEqual(result.code, 1, result)
+        lines = result.out.splitlines()
+        for finding in (
+            "G3 T011 VO-001: no valid failing-first record and no exception",
+            "G3 T012 VO-001: no valid failing-first record and no exception",
+            "G4 T012 VO-001: no valid passing record after its failing-first record",
+            "G3 T013 VO-002: no valid failing-first record and no exception",
+            "G3 T014 VO-002: no valid failing-first record and no exception",
+            "G4 T014 VO-002: no valid passing record after its failing-first record",
+        ):
+            self.assertIn(finding, lines)
+
+    def test_gate_creates_or_changes_no_file(self):
+        root = self.repo("no-tooling-complete")
+        before = snapshot(root)
+        self.check(["gate", "--all"], root)
+        self.assertEqual(snapshot(root), before)
+
+
+class DeferredGateTests(GateCase):
+    """A standing deferral never holds a task; one waiting for approval does, by G12 (FR-008A, FR-009, D4)."""
+
+    G12 = "G12 {task} DF-01: needs approval and has no approver"
+    G3 = "G3 {task} VO-002: no valid failing-first record and no exception"
+
+    def lines(self, fixture, task):
+        result = self.gate(fixture, "--task", task)
+        return result, result.out.splitlines()
+
+    def test_a_standing_deferral_on_an_environment_failure_holds_neither_task(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-standing", task)
+
+    def test_without_the_deferral_the_same_failure_holds_the_tasks(self):
+        root = self.repo("deferred-standing")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.split("\n## Deferrals")[0])
+        result = self.check(["gate", "--task", "T013"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(self.G3.format(task="T013"), result.out.splitlines())
+        self.assertIn("G6 T013 #4: the latest record for the task is a failure", result.out.splitlines())
+
+    def test_a_deferral_that_needs_approval_holds_every_task_that_names_the_obligation(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                result, lines = self.lines("deferred-waiting", task)
+                self.assertEqual(result.code, 1, result)
+                self.assertIn(self.G12.format(task=task), lines)
+
+    def test_a_deferral_that_waits_does_not_stand_so_the_evidence_rules_still_apply(self):
+        _result, lines = self.lines("deferred-waiting", "T013")
+        self.assertIn(self.G3.format(task="T013"), lines)
+
+    def test_a_task_that_does_not_name_the_obligation_is_not_held_by_g12(self):
+        self.assert_passes("deferred-waiting", "T011")
+
+    def test_approval_releases_the_tasks(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-approved", task)
+
+    def test_approving_with_the_script_releases_the_tasks(self):
+        root = self.repo("deferred-waiting")
+        self.assertEqual(self.check(["gate", "--task", "T013"], root).code, 1)
+        approved = self.check(["approve", "--id", "DF-01", "--by", "A Person"], root)
+        self.assertEqual(approved.code, 0, approved)
+        self.assertEqual(self.check(["gate", "--task", "T013"], root).out, "gate T013: passed\n")
+        self.assertEqual(self.check(["gate", "--task", "T014"], root).out, "gate T014: passed\n")
+
+    def test_an_approved_deferral_holds_nothing_after_a_defect_failure_either(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-after-failure", task)
+
+    def test_a_later_passing_run_needs_no_deferral_and_the_tasks_pass(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-then-verified", task)
+
+    def test_a_standing_deferral_beside_an_environment_blocked_exception_holds_nothing(self):
+        for task in ("T013", "T014"):
+            with self.subTest(task=task):
+                self.assert_passes("deferred-and-blocked-exception", task)
+
+    def test_gate_all_passes_when_every_task_is_complete(self):
+        result = self.gate("deferred-compliant", "--all")
+        self.assertEqual((result.code, result.out), (0, "gate: passed, 5 completed tasks\n"), result)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,8 @@ answer a question or approval request as a developer would:
 ```
 
 Do this for every story in one project, and for stories 01, 05 and 07 in each of two more
-projects that differ in language and test framework. That is 13 runs. Keep each project's
+projects that differ in language and test framework. That is 14 runs, of which story 08
+stops after the plan stage. Keep each project's
 lint and CI configuration in place, and run its own quality commands before the first
 command and again after the last: they must still run and still gate as they did.
 
@@ -51,14 +52,74 @@ python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py status
 | C5 | Every completed task passes the gate rules G1 to G9 |
 | C6 | A baseline comes first, and the latest checkpoint passed or its failure is pre-existing and reported |
 | C7 | No obligation is planned or in progress, and the stored Summary matches the regenerated view |
+| C8 | For a feature with a behaviour checklist: the checklist passes the plan and tasks checks (B1 to B7), and no behaviour item fixed at the baseline has been changed or removed without an accepted change record |
 
 `status` prints, for each obligation, its requirements, derived status
 (planned, in progress, verified, blocked or failed), the tests that ran and the latest
 result, followed by what is not verified and why, exceptions, expectation changes, open
 decisions and failures that were present before the work began.
 
-Then work through the story's checklist from the artefacts: the plan, the task list and
-`tdd-evidence.md`.
+For a feature with a behaviour checklist, `status` also prints a table of the behaviour
+items. Each row has the item, its scenario (or `-` for Other behaviours), the obligations
+that verify it, its derived status and the tests that ran. An item is `verified` only when
+every obligation it names is verified, `exempt` when it names exemptions only, and
+otherwise `failed`, `blocked`, `in progress` or `planned`, in that order of precedence. An
+item that is not verified is listed on the **Not verified** line, and the **Item changes**
+line lists each change record with its approval state and each change with no record.
+
+Then work through the story's checklist from the artefacts: the plan, the task list,
+`tests/behaviour-checklist.md` and the evidence, which is `tests/tdd-evidence.md` for a
+feature planned with the behaviour checklist and `tdd-evidence.md` for an older one.
+
+## Judging a behaviour checklist
+
+The check script decides what can be decided mechanically (that every requirement is named,
+that the quotes match, that no item names a code element). It does not decide whether the
+checklist is a faithful statement of the specification. A reviewer who took no part reads
+`spec.md` and the checklist, with the side-by-side view:
+
+```bash
+python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py status --scenarios
+```
+
+and judges:
+
+- **Nothing weaker.** For each scenario, every outcome it states appears in its items.
+  A scenario saying "the total is zero and no error is raised" is not matched by an item
+  that says only "the total is zero".
+- **Nothing beyond.** No item states a behaviour the specification does not. A behaviour
+  found in the code and not in the specification is a question for the developer, not an
+  item.
+- **No duplicates.** No two items describe one behaviour, and a small change has about one
+  item per scenario.
+- **Observable terms.** Each item says what a user sees, a caller receives, or is stored
+  and can be read back, in the specification's words. An item that reads like a description
+  of the code is the sign of a checklist written from the code.
+- **Where it comes from.** For any item, the reviewer can name the requirement it expresses
+  from its *Expresses* line, and the tests that verify it from `status`, without the plan or
+  the task list. Target: under two minutes per item, and under ten minutes to judge the
+  whole checklist against the specification.
+
+Story 08 shows the failure on purpose. Give its text to `/speckit-specify` in a project
+whose code already does more than asked, run `/speckit-plan`, and read the result as the
+story's checklist describes: `plan` reports **B5** for items that name code elements and
+**B1** for the requirement the code does not yet meet, and the plan stage does not report
+completion until they are corrected.
+
+## Judging work that tests cannot verify
+
+Three cases cover it. Story 09 in an empty project with no test framework: all five stages
+complete, the plan records `None`, no framework is chosen or installed, and the final report
+says nothing was verified by tests. The run `examples/runs/no-tooling/` shows the result,
+and `examples/runs/deferred/` shows a deferral and a manual check beside a verified
+obligation. For each, run `status` and `compliance` and read:
+
+- **Counted apart.** Deferred obligations and manual checks sit under "Not verified by
+  tests" and are not in the verified count.
+- **Reasoned.** Every deferral has a reason, and one outside an environment failure or no
+  test tooling has a named approver.
+- **A person's result is theirs.** A manual result carries the name of the person who did
+  the check, not the agent's.
 
 ## What a compliant verdict does and does not show
 

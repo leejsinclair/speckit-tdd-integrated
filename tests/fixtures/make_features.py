@@ -35,6 +35,11 @@ EXPECTATION_HEADER = [
 ]  # fmt: skip
 DECISION_HEADER = ["ID", "Opened", "Question", "Tasks", "Status", "Answer", "Decided by", "Resolved"]
 CHAINED = [name for name in RECORD_HEADER if name not in ("Classification", "Note", "Check")]
+DEFERRAL_HEADER = ["ID", "Time", "Obligations", "Reason", "Basis", "Needs approval", "Approved by", "Check"]
+DEFERRAL_CHAINED = ["ID", "Time", "Obligations", "Reason", "Basis", "Needs approval"]
+MANUAL_HEADER = ["ID", "Covers", "Steps", "Expected result", "Why not automated"]
+MANUAL_RESULT_HEADER = ["ID", "Time", "Check", "Result", "Recorded by", "Note", "Check value"]
+MANUAL_RESULT_CHAINED = ["ID", "Time", "Check", "Result", "Recorded by"]
 
 
 # ---------------------------------------------------------------------------
@@ -42,10 +47,15 @@ CHAINED = [name for name in RECORD_HEADER if name not in ("Classification", "Not
 # ---------------------------------------------------------------------------
 
 
-def check_value(previous, row):
-    """First six hex characters of SHA-256 over the previous check and the row's cells."""
-    text = previous + "\n" + "|".join(row[name] for name in CHAINED)
+def check_over(previous, row, columns):
+    """First six hex characters of SHA-256 over the previous check and the cells named by ``columns``."""
+    text = previous + "\n" + "|".join(row[name] for name in columns)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
+
+
+def check_value(previous, row):
+    """The check value of a Test Execution Record."""
+    return check_over(previous, row, CHAINED)
 
 
 def fingerprint(contents):
@@ -90,7 +100,9 @@ def rec(task, vos, phase, command, selector, result, valid, classification="-", 
 
 
 def baseline(result="pass", note="-", command="suite"):
-    return rec("-", "-", "baseline", command, "-", result, "yes", "-" if result == "pass" else "unclassified", note=note)
+    return rec(
+        "-", "-", "baseline", command, "-", result, "yes", "-" if result == "pass" else "unclassified", note=note
+    )
 
 
 def red(task, vo, selector="assert", fp=FP_A, files="tests/test_cart.py", command="unit"):
@@ -299,6 +311,135 @@ def variant(**changes):
         else:
             files[name] = value
     return files
+
+
+MARKER = (
+    "### Behaviour checklist\n\nBehaviour items are in [tests/behaviour-checklist.md](tests/behaviour-checklist.md).\n"
+)
+
+
+def checklist_text(sections, other=None, name="001-demo"):
+    """Write the checklist format of contracts/behaviour-checklist.md section 1.
+
+    ``sections`` is a list of ``(heading, quote, items)`` with ``heading`` such as
+    ``US1-AS1``; ``other`` is a list of items or None. An item is a dict with ``id``,
+    ``expresses`` and ``verified`` (lists or strings) and ``clauses``, a list of
+    ``(keyword, text)`` pairs.
+    """
+
+    def join(value):
+        return value if isinstance(value, str) else ", ".join(value)
+
+    def item_lines(item):
+        lines = [f"- **{item['id']}** Expresses: {join(item['expresses'])}. Verified by: {join(item['verified'])}."]
+        lines += [f"  - **{keyword}** {text}" for keyword, text in item["clauses"]]
+        return lines
+
+    out = ["# Behaviour Checklist: " + name, ""]
+    for heading, quote, items in sections:
+        out += ["## " + heading, ""]
+        if quote is not None:
+            out += ["> " + line for line in quote.splitlines()] + [""]
+        for item in items:
+            out += item_lines(item)
+        out.append("")
+    if other is not None:
+        out += ["## Other behaviours", ""]
+        for item in other:
+            out += item_lines(item)
+        out.append("")
+    return "\n".join(out)
+
+
+def with_checklist(checklist=None, **changes):
+    """A ``variant()`` whose plan holds ``MARKER`` and that carries ``tests/behaviour-checklist.md``."""
+    files = variant(**changes)
+    plan = files["plan.md"]
+    if MARKER not in plan:
+        files["plan.md"] = swap(plan, "\n## Project Structure", "\n" + MARKER + "\n## Project Structure")
+    if checklist is not None:
+        files["tests/behaviour-checklist.md"] = checklist
+    return files
+
+
+NO_TOOLING_ROW = "| None | - | - | - |\n"
+COMMAND_ROWS = (
+    "| unit | `sh tests/fixtures/bin/fake_test.sh {select}` | focused | tests/fixtures/bin |\n"
+    "| suite | `sh tests/fixtures/bin/fake_test.sh pass` | broad | tests/fixtures/bin |\n"
+)
+
+
+def no_tooling(**changes):
+    """A ``variant()`` whose commands table holds only the ``None`` row (research D1).
+
+    It has no evidence document unless ``evidence`` is given, because a project with no
+    test tooling has no runs to record.
+    """
+    params = {"evidence": None}
+    params.update(changes)
+    plan = params.get("plan", PLAN)
+    if COMMAND_ROWS in plan:
+        params["plan"] = swap(plan, COMMAND_ROWS, NO_TOOLING_ROW)
+    return variant(**params)
+
+
+def mv(ident="MV-001", covers="FR-003", steps="Open the cart page and compare it with the design",
+       expected="The layout matches the design", why="Visual layout has no stable automated check"):  # fmt: skip
+    return {"ID": ident, "Covers": covers, "Steps": steps, "Expected result": expected, "Why not automated": why}
+
+
+def manual_table(rows):
+    """The ``### Manual verification`` sub-heading and table; no rows gives a single ``None`` row."""
+    if not rows:
+        rows = [{"ID": "None", "Covers": "-", "Steps": "-", "Expected result": "-", "Why not automated": "-"}]
+    return "### Manual verification\n\n" + table(MANUAL_HEADER, list(rows))
+
+
+def with_manual(rows=None, **changes):
+    """A ``variant()`` with a ``### Manual verification`` table after the exemptions table."""
+    files = variant(**changes)
+    plan = files["plan.md"]
+    files["plan.md"] = swap(
+        plan, "\n## Project Structure", "\n" + manual_table([mv()] if rows is None else rows) + "\n## Project Structure"
+    )
+    return files
+
+
+def _chained_rows(rows, columns, check_column):
+    previous = ""
+    out = []
+    for given in rows:
+        row = dict(given)
+        row.setdefault(check_column, check_over(previous, row, columns))
+        previous = row[check_column]
+        out.append(row)
+    return out
+
+
+def df(ident, vos, reason="needs queue", basis="environment failure #2", needs="no", approved="-", time=None):
+    """A Deferral row; ``Check`` is added by ``deferrals_table``."""
+    return {
+        "ID": ident, "Time": time or stamp(40), "Obligations": vos, "Reason": reason, "Basis": basis,
+        "Needs approval": needs, "Approved by": approved,
+    }  # fmt: skip
+
+
+def mr(ident, check, result="pass", by="A Person", note="-", time=None):
+    """A Manual Result row; ``Check value`` is added by ``manual_results_table``."""
+    return {
+        "ID": ident, "Time": time or stamp(41), "Check": check, "Result": result, "Recorded by": by, "Note": note,
+    }  # fmt: skip
+
+
+def deferrals_table(rows):
+    """The ``## Deferrals`` section, each row chained over its own chain (data-model.md)."""
+    return "\n## Deferrals\n\n" + table(DEFERRAL_HEADER, _chained_rows(rows, DEFERRAL_CHAINED, "Check"))
+
+
+def manual_results_table(rows):
+    """The ``## Manual results`` section, each row chained over its own chain."""
+    chained = _chained_rows(rows, MANUAL_RESULT_CHAINED, "Check value")
+    return "\n## Manual results\n\n" + table(MANUAL_RESULT_HEADER, chained)
 
 
 CASES = {}
@@ -1001,6 +1142,1101 @@ def _compliance_c7_fail_stale_plan():
 
 
 # ---------------------------------------------------------------------------
+# Evidence location cases (T006)
+# ---------------------------------------------------------------------------
+
+
+@case("evidence-top")
+def _evidence_top():
+    return variant()
+
+
+@case("evidence-tests")
+def _evidence_tests():
+    files = variant()
+    files["tests/tdd-evidence.md"] = files.pop("tdd-evidence.md")
+    return files
+
+
+@case("evidence-both")
+def _evidence_both():
+    files = variant()
+    files["tests/tdd-evidence.md"] = files["tdd-evidence.md"]
+    return files
+
+
+# ---------------------------------------------------------------------------
+# Checklist parser cases (T008)
+# ---------------------------------------------------------------------------
+
+SPEC_WRAPPED = swap(
+    SPEC,
+    "2. **Given** a cart with two items, **When** it is totalled, **Then** the total is their sum.",
+    "2. **Given** a cart with two items,\n   **When** it is totalled,\n   **Then** the total is their sum.",
+)
+SCENARIO_1 = "**Given** an empty cart, **When** it is totalled, **Then** the total is zero."
+SCENARIO_2 = "**Given** a cart with two items, **When** it is totalled, **Then** the total is their sum."
+
+
+def bi(ident, expresses, verified, clauses):
+    return {"id": ident, "expresses": expresses, "verified": verified, "clauses": clauses}
+
+
+ITEM_EMPTY = bi(
+    "BI-001", ["FR-001", "US1-AS1"], ["VO-001"],
+    [("Given", "an empty cart"), ("When", "the shopper asks for the total"), ("Then", "the total is zero"),
+     ("And", "no error is shown")],
+)  # fmt: skip
+ITEM_SUM = bi(
+    "BI-002", ["FR-002", "US1-AS2"], ["VO-002"],
+    [("Given", "a cart with two items priced 3 and 4"), ("When", "the shopper asks for the total"),
+     ("Then", "the total is 7")],
+)  # fmt: skip
+ITEM_OTHER = bi(
+    "BI-003", ["FR-003", "EC-01"], ["VO-002", "exemption FR-003"],
+    [("Given", "an item priced 0"), ("When", "the cart is totalled"), ("Then", "the zero price is accepted")],
+)  # fmt: skip
+
+
+def full_checklist():
+    text = checklist_text(
+        [("US1-AS1: empty cart", SCENARIO_1, [ITEM_EMPTY]), ("US1-AS2", SCENARIO_2, [ITEM_SUM])],
+        other=[ITEM_OTHER],
+    )
+    return (
+        text + "\n```markdown\n- **BI-099** Expresses: FR-001. Verified by: VO-001.\n- [ ] a checkbox in a fence\n```\n"
+    )
+
+
+@case("parse-checklist-full")
+def _parse_checklist_full():
+    return with_checklist(full_checklist(), spec=SPEC_WRAPPED)
+
+
+@case("parse-checklist-relinked")
+def _parse_checklist_relinked():
+    relinked = dict(ITEM_EMPTY, verified=["VO-001", "VO-002"])
+    return with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [relinked])]))
+
+
+@case("parse-checklist-same")
+def _parse_checklist_same():
+    return with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [ITEM_EMPTY])]))
+
+
+@case("parse-checklist-reworded")
+def _parse_checklist_reworded():
+    reworded = dict(ITEM_EMPTY, clauses=[("Given", "an empty basket")] + ITEM_EMPTY["clauses"][1:])
+    return with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [reworded])]))
+
+
+@case("parse-checklist-quote-emphasis")
+def _parse_checklist_quote_emphasis():
+    quote = "Given an empty cart,\nWhen it is totalled,\nThen the total is zero."
+    return with_checklist(checklist_text([("US1-AS1", quote, [ITEM_EMPTY])]))
+
+
+@case("parse-checklist-marker-only")
+def _parse_checklist_marker_only():
+    return with_checklist()
+
+
+@case("parse-checklist-file-only")
+def _parse_checklist_file_only():
+    files = variant()
+    files["tests/behaviour-checklist.md"] = checklist_text([("US1-AS1", SCENARIO_1, [ITEM_EMPTY])])
+    return files
+
+
+@case("parse-checklist-malformed")
+def _parse_checklist_malformed():
+    text = (
+        "# Behaviour Checklist\n\n- **BI-1** Expresses: . Verified by: .\n  - **Then** first\n"
+        "## Mystery\n\n- [x] done\nStatus: ok\n## US9-AS9\n> \n- **BI-001** Expresses: FR-001\n  - **Maybe** x\n"
+    )
+    return with_checklist(text)
+
+
+def item_tables(baseline_rows, change_rows):
+    return (
+        "\n## Behaviour items at baseline\n\n"
+        + table(["Item", "Verified by", "Fingerprint", "Seq"], baseline_rows)
+        + "\n## Behaviour item changes\n\n"
+        + table(
+            ["ID", "Time", "Item", "Requirements", "Justification", "Alters behaviour", "Approved by",
+             "New fingerprint"],
+            change_rows,
+        )
+    )  # fmt: skip
+
+
+@case("parse-checklist-evidence")
+def _parse_checklist_evidence():
+    files = with_checklist(checklist_text([("US1-AS1", SCENARIO_1, [ITEM_EMPTY])]))
+    baseline_rows = [{"Item": "BI-001", "Verified by": "VO-001", "Fingerprint": "a1b2c3", "Seq": "1"}]
+    change_rows = [
+        {"ID": "BX-01", "Time": stamp(31), "Item": "BI-001", "Requirements": "FR-001, US1-AS1",
+         "Justification": "The outcome was mistyped", "Alters behaviour": "yes", "Approved by": "Lee",
+         "New fingerprint": "d4e5f6"},
+    ]  # fmt: skip
+    files["tdd-evidence.md"] += item_tables(baseline_rows, change_rows)
+    return files
+
+
+# ---------------------------------------------------------------------------
+# Checklist rule cases (T018): one per rule and per distinct reason
+# ---------------------------------------------------------------------------
+
+CL_ITEM_1 = bi(
+    "BI-001", ["FR-001", "US1-AS1"], ["VO-001"],
+    [("Given", "an empty cart"), ("When", "the shopper asks for the total"), ("Then", "the total is zero")],
+)  # fmt: skip
+CL_ITEM_2 = bi(
+    "BI-002", ["FR-002", "US1-AS2", "SC-001"], ["VO-002"],
+    [("Given", "a cart with two items priced 3 and 4"), ("When", "the shopper asks for the total"),
+     ("Then", "the total is 7")],
+)  # fmt: skip
+CL_ITEM_3 = bi(
+    "BI-003", ["FR-003"], ["exemption FR-003"],
+    [("Given", "the cart page is shown"), ("When", "the shopper looks at it"),
+     ("Then", "it follows the shop's visual layout")],
+)  # fmt: skip
+
+
+def cl_sections(items1=None, items2=None, quote1=SCENARIO_1, quote2=SCENARIO_2):
+    return [
+        ("US1-AS1", quote1, [CL_ITEM_1] if items1 is None else items1),
+        ("US1-AS2", quote2, [CL_ITEM_2] if items2 is None else items2),
+    ]
+
+
+def cl_case(sections=None, other=None, text=None, **changes):
+    """valid-minimal with the marker and a checklist; ``text`` replaces the whole checklist file."""
+    if text is None:
+        text = checklist_text(
+            sections if sections is not None else cl_sections(), [CL_ITEM_3] if other is None else other
+        )
+    return with_checklist(text, **changes)
+
+
+def cl_edit(old, new, **changes):
+    """The valid checklist with one text change, for defects that checklist_text cannot express."""
+    base = checklist_text(cl_sections(), [CL_ITEM_3])
+    return with_checklist(swap(base, old, new), **changes)
+
+
+def cl_append(extra):
+    return with_checklist(checklist_text(cl_sections(), [CL_ITEM_3]) + extra)
+
+
+def with_item(item, **changes):
+    return dict(item, **changes)
+
+
+CASES["checklist-valid"] = cl_case
+
+
+@case("checklist-by-file")
+def _checklist_by_file():
+    # The checklist file without the marker still switches the rules on: FR-003 is named by no item.
+    files = variant()
+    files["tests/behaviour-checklist.md"] = checklist_text(cl_sections())
+    return files
+
+
+@case("checklist-missing")
+def _checklist_missing():
+    return with_checklist()
+
+
+@case("b1-fr")
+def _b1_fr():
+    return cl_case(other=[])
+
+
+@case("b1-scenario")
+def _b1_scenario():
+    # US1-AS2 has no section and no item that names it.
+    moved = with_item(CL_ITEM_2, expresses=["FR-002", "SC-001"])
+    return cl_case(sections=cl_sections()[:1], other=[moved, CL_ITEM_3])
+
+
+@case("b2-no-link")
+def _b2_no_link():
+    # BI-004 repeats VO-001's behaviour only to keep B3 quiet.
+    empty = with_item(CL_ITEM_3, verified=[])
+    return cl_case(other=[empty, bi("BI-004", ["FR-001"], ["VO-001"], CL_ITEM_1["clauses"])])
+
+
+@case("b2-unknown-vo")
+def _b2_unknown_vo():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, verified=["VO-001", "VO-099"])]))
+
+
+@case("b2-unknown-exemption")
+def _b2_unknown_exemption():
+    return cl_case(other=[with_item(CL_ITEM_3, verified=["exemption FR-099"])])
+
+
+@case("b3-unnamed")
+def _b3_unnamed():
+    return cl_case(sections=cl_sections(items2=[with_item(CL_ITEM_2, verified=["VO-001"])]))
+
+
+@case("b4-bad-id")
+def _b4_bad_id():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, id="BI-1")]))
+
+
+@case("b4-duplicate-id")
+def _b4_duplicate_id():
+    return cl_case(other=[with_item(CL_ITEM_3, id="BI-001")])
+
+
+@case("b4-empty-expresses")
+def _b4_empty_expresses():
+    return cl_case(other=[with_item(CL_ITEM_3, expresses=[])])
+
+
+@case("b4-missing-then")
+def _b4_missing_then():
+    return cl_case(sections=cl_sections(items2=[with_item(CL_ITEM_2, clauses=CL_ITEM_2["clauses"][:2])]))
+
+
+@case("b4-repeated-when")
+def _b4_repeated_when():
+    clauses = CL_ITEM_2["clauses"]
+    return cl_case(
+        sections=cl_sections(items2=[with_item(CL_ITEM_2, clauses=clauses[:2] + [("When", "again")] + clauses[2:])])
+    )
+
+
+@case("b4-out-of-order")
+def _b4_out_of_order():
+    given, when, then = CL_ITEM_2["clauses"]
+    return cl_case(sections=cl_sections(items2=[with_item(CL_ITEM_2, clauses=[when, given, then])]))
+
+
+@case("b4-outside-section")
+def _b4_outside_section():
+    stray = (
+        "- **BI-009** Expresses: FR-001. Verified by: VO-001.\n"
+        "  - **Given** an empty cart\n  - **When** the shopper asks for the total\n  - **Then** the total is zero\n\n"
+    )
+    base = checklist_text(cl_sections(), [CL_ITEM_3])
+    # The stray item sits between the title and the first section.
+    return with_checklist(swap(base, "## US1-AS1", stray + "## US1-AS1"))
+
+
+@case("b4-unknown-heading")
+def _b4_unknown_heading():
+    return cl_append("\n## Notes\n\nSomething else.\n")
+
+
+@case("b4-empty-section")
+def _b4_empty_section():
+    # US1-AS2 has a section and no item; its item sits under Other behaviours without naming the scenario.
+    moved = with_item(CL_ITEM_2, expresses=["FR-002", "SC-001"])
+    return cl_case(sections=cl_sections(items2=[]), other=[moved, CL_ITEM_3])
+
+
+@case("b4-checkbox")
+def _b4_checkbox():
+    return cl_append("\n- [ ] reviewed\n")
+
+
+@case("b4-status")
+def _b4_status():
+    return cl_append("\nStatus: draft\n")
+
+
+SPEC_NAMES_PATH = swap(
+    SPEC,
+    "- A price of zero is allowed.",
+    "- A price of zero is allowed.\n- The totals are also written to out/totals.csv.",
+)
+TASKS_NAME_SUBTOTAL = swap(
+    TASKS,
+    "Implement the empty cart total in src/cart.py",
+    "Implement the empty cart total with a subtotal in src/cart.py",
+)
+TASKS_NAME_CART_TOTAL = swap(
+    TASKS,
+    "Implement the empty cart total in src/cart.py",
+    "Implement the empty cart total as cart_total() in src/cart.py",
+)
+
+
+def then_clause(item, text):
+    return with_item(item, clauses=item["clauses"][:2] + [("Then", text)])
+
+
+@case("b5-path")
+def _b5_path():
+    return cl_case(sections=cl_sections(items1=[then_clause(CL_ITEM_1, "src/cart.py returns 0")]))
+
+
+@case("b5-identifier")
+def _b5_identifier():
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "cart_total() is called"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]), tasks=TASKS_NAME_CART_TOTAL)
+
+
+@case("b5-call-form")
+def _b5_call_form():
+    # The task list names item_count without parentheses; the clause calls it with them.
+    tasks = swap(
+        TASKS,
+        "Implement the empty cart total in src/cart.py",
+        "Implement the empty cart total beside item_count in src/cart.py",
+    )
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "item_count() is called"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]), tasks=tasks)
+
+
+@case("b5-call-form-in-spec")
+def _b5_call_form_in_spec():
+    # The specification names item_count (without parentheses), so the clause may call it.
+    spec = swap(
+        SPEC,
+        "- A price of zero is allowed.",
+        "- A price of zero is allowed.\n- The item_count of a cart is not changed.",
+    )
+    tasks = swap(
+        TASKS,
+        "Implement the empty cart total in src/cart.py",
+        "Implement the empty cart total beside item_count in src/cart.py",
+    )
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "item_count() is called"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]), spec=spec, tasks=tasks)
+
+
+@case("b5-backticked")
+def _b5_backticked():
+    return cl_case(
+        sections=cl_sections(items1=[then_clause(CL_ITEM_1, "the `subtotal` is zero")]), tasks=TASKS_NAME_SUBTOTAL
+    )
+
+
+@case("b5-spec-names-path")
+def _b5_spec_names_path():
+    return cl_case(
+        sections=cl_sections(items1=[then_clause(CL_ITEM_1, "out/totals.csv holds zero")]), spec=SPEC_NAMES_PATH
+    )
+
+
+@case("b5-identifier-not-in-design")
+def _b5_identifier_not_in_design():
+    item = with_item(CL_ITEM_1, clauses=[("Given", "an empty cart"), ("When", "the shopper calls cart_total()"),
+                                         ("Then", "the total is zero")])  # fmt: skip
+    return cl_case(sections=cl_sections(items1=[item]))
+
+
+@case("b6-unknown-fr")
+def _b6_unknown_fr():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "FR-099", "US1-AS1"])]))
+
+
+@case("b6-unknown-ec")
+def _b6_unknown_ec():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS1", "EC-99"])]))
+
+
+@case("b6-unknown-prefix")
+def _b6_unknown_prefix():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS1", "XY-001"])]))
+
+
+@case("b6-unknown-section")
+def _b6_unknown_section():
+    stray = bi("BI-004", ["US9-AS9"], ["VO-001"], CL_ITEM_1["clauses"])
+    return cl_case(sections=cl_sections() + [("US9-AS9", "Given a thing, When it happens, Then it ends.", [stray])])
+
+
+@case("b6-duplicate-section")
+def _b6_duplicate_section():
+    again = bi("BI-004", ["US1-AS1"], ["VO-001"], CL_ITEM_1["clauses"])
+    return cl_case(sections=cl_sections() + [("US1-AS1", SCENARIO_1, [again])])
+
+
+@case("b6-no-quote")
+def _b6_no_quote():
+    return cl_case(sections=cl_sections(quote1=None))
+
+
+@case("b6-quote-differs")
+def _b6_quote_differs():
+    return cl_case(sections=cl_sections(quote1=SCENARIO_1.replace("zero", "nil")))
+
+
+@case("b6-quote-emphasis-only")
+def _b6_quote_emphasis_only():
+    return cl_case(sections=cl_sections(quote1="Given an empty cart,\nWhen it is totalled,\nThen the total is zero."))
+
+
+@case("b6-wrong-scenario")
+def _b6_wrong_scenario():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS2"])]))
+
+
+@case("b6-two-scenarios")
+def _b6_two_scenarios():
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, expresses=["FR-001", "US1-AS1", "US1-AS2"])]))
+
+
+@case("b6-other-names-scenario")
+def _b6_other_names_scenario():
+    return cl_case(other=[with_item(CL_ITEM_3, expresses=["FR-003", "US1-AS1"])])
+
+
+@case("b7-untraced-test-task")
+def _b7_untraced_test_task():
+    # Nothing names VO-001, so the test task T011 that names only VO-001 is untraced.
+    return cl_case(sections=cl_sections(items1=[with_item(CL_ITEM_1, verified=["VO-002"])]))
+
+
+@case("checklist-and-plan-findings")
+def _checklist_and_plan_findings():
+    plan = swap(PLAN, "| FR-002, US1-AS2, SC-001, DC-01, EC-01 |", "| FR-002, US1-AS2, SC-001, DC-01, EC-01, FR-077 |")
+    return cl_case(other=[], plan=plan)
+
+
+# ---------------------------------------------------------------------------
+# Behaviour item cases (T034): fixing, change records, G10, G11, status and C8
+# ---------------------------------------------------------------------------
+
+CL_ITEM_4 = bi(
+    "BI-004", ["SC-001"], ["VO-002"],
+    [("Given", "a cart with two items"), ("When", "the shopper asks for the total"),
+     ("Then", "the total is shown within one second")],
+)  # fmt: skip
+CL_ITEM_5 = bi(
+    "BI-005", ["FR-001", "FR-002"], ["VO-001", "VO-002"],
+    [("Given", "any cart"), ("When", "the shopper asks for the total"), ("Then", "a total is returned")],
+)  # fmt: skip
+BASE_ITEMS = [CL_ITEM_1, CL_ITEM_2, CL_ITEM_3, CL_ITEM_4]
+CL_ITEM_2_CHANGED = with_item(CL_ITEM_2, clauses=CL_ITEM_2["clauses"][:2] + [("Then", "the total is 8")])
+
+
+def item_fp(item):
+    """The fingerprint of an item as the contract defines it, computed independently of the script."""
+    text = "\n".join(f"{keyword} {words}" for keyword, words in item["clauses"])
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
+
+
+def item_rows(items=BASE_ITEMS, seq="1"):
+    return [
+        {"Item": item["id"], "Verified by": ", ".join(item["verified"]), "Fingerprint": item_fp(item), "Seq": seq}
+        for item in items
+    ]
+
+
+def bx(ident, item, fingerprint, alters="no", approved="-", requirements="FR-002, US1-AS2"):
+    return {
+        "ID": ident, "Time": stamp(31), "Item": item, "Requirements": requirements,
+        "Justification": "The expected total was mistyped", "Alters behaviour": alters, "Approved by": approved,
+        "New fingerprint": fingerprint,
+    }  # fmt: skip
+
+
+def item_checklist(items=BASE_ITEMS):
+    """Scenario items go under their scenario, the rest under Other behaviours, in id order."""
+    one = [item for item in items if "US1-AS1" in item["expresses"]]
+    two = [item for item in items if "US1-AS2" in item["expresses"]]
+    other = [item for item in items if item not in one + two]
+    return checklist_text([("US1-AS1", SCENARIO_1, one), ("US1-AS2", SCENARIO_2, two)], other)
+
+
+def item_case(items=BASE_ITEMS, rows=None, changes=(), records=BOTH_CYCLES, tasks=TASKS, summary=DEFAULT_SUMMARY,
+              decisions=(), **more):  # fmt: skip
+    files = with_checklist(item_checklist(items), tasks=tasks, **more)
+    text = evidence(records, decisions=decisions, summary=summary)
+    files["tdd-evidence.md"] = text + item_tables(item_rows() if rows is None else rows, list(changes))
+    return files
+
+
+CASES["items-baseline"] = item_case
+
+
+@case("item-changed")
+def _item_changed():
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4])
+
+
+@case("item-removed")
+def _item_removed():
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2, CL_ITEM_3])
+
+
+CHANGED_FP = item_fp(CL_ITEM_2_CHANGED)
+
+
+@case("item-change-recorded")
+def _item_change_recorded():
+    return item_case(
+        items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[bx("BX-01", "BI-002", CHANGED_FP)]
+    )
+
+
+@case("item-change-awaiting-approval")
+def _item_change_awaiting_approval():
+    change = bx("BX-01", "BI-002", CHANGED_FP, alters="yes")
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[change])
+
+
+@case("item-change-approved")
+def _item_change_approved():
+    change = bx("BX-01", "BI-002", CHANGED_FP, alters="yes", approved="Lee Sinclair")
+    return item_case(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4], changes=[change])
+
+
+@case("item-removal-recorded")
+def _item_removal_recorded():
+    return item_case(
+        items=[CL_ITEM_1, CL_ITEM_2, CL_ITEM_3], changes=[bx("BX-01", "BI-004", "removed", requirements="SC-001")]
+    )
+
+
+@case("item-added-after-baseline")
+def _item_added_after_baseline():
+    return item_case(items=BASE_ITEMS + [CL_ITEM_5])
+
+
+@case("item-relinked")
+def _item_relinked():
+    # Verified by changes, the clauses do not: not a change.
+    return item_case(items=[with_item(CL_ITEM_1, verified=["VO-001", "VO-002"])] + BASE_ITEMS[1:])
+
+
+@case("item-id-reused")
+def _item_id_reused():
+    reused = with_item(CL_ITEM_4, clauses=[("Given", "an empty cart"), ("When", "the shopper asks for the total"),
+                                           ("Then", "the total is shown in pounds")])  # fmt: skip
+    change = bx("BX-01", "BI-004", "removed", requirements="SC-001")
+    return item_case(items=BASE_ITEMS[:3] + [reused], changes=[change])
+
+
+@case("g11-requirement-added")
+def _g11_requirement_added():
+    spec = swap(
+        SPEC, "- **FR-003**:", "- **FR-004**: The system MUST total a cart in a single currency.\n- **FR-003**:"
+    )
+    return item_case(spec=spec)
+
+
+@case("g11-item-broken")
+def _g11_item_broken():
+    broken = with_item(CL_ITEM_1, clauses=CL_ITEM_1["clauses"][:2] + [("Then", "src/cart.py returns zero")])
+    return item_case(items=[broken] + BASE_ITEMS[1:])
+
+
+@case("g11-before-baseline")
+def _g11_before_baseline():
+    broken = with_item(CL_ITEM_1, clauses=CL_ITEM_1["clauses"][:2] + [("Then", "src/cart.py returns zero")])
+    return item_case(items=[broken] + BASE_ITEMS[1:], records=[], rows=[])
+
+
+@case("red-unlinked-obligation")
+def _red_unlinked_obligation():
+    # A discovered obligation that no item names, after a baseline.
+    plan = swap(
+        PLAN,
+        "\n### Verification exemptions",
+        "| VO-003 | EC-02 | A very large cart is totalled | The total is returned | unit | discovered |\n"
+        "\n### Verification exemptions",
+    )
+    tasks = TASKS + (
+        "- [ ] T016 [US1] [VO-003] Write the failing test for a very large cart in tests/test_cart.py\n"
+        "- [ ] T017 [US1] [VO-003] Make the very large cart total pass in src/cart.py\n"
+    )
+    return item_case(records=[baseline()], rows=item_rows(), plan=plan, tasks=tasks)
+
+
+# Status cases: the checklist also holds BI-005, which names both obligations.
+STATUS_ITEMS = BASE_ITEMS + [CL_ITEM_5]
+MIXED = bi("BI-006", ["FR-001", "FR-003"], ["VO-001", "exemption FR-003"], CL_ITEM_1["clauses"])
+
+
+def status_case(records, items=STATUS_ITEMS, **kwargs):
+    return item_case(items=items, records=records, rows=item_rows(items), **kwargs)
+
+
+@case("items-status-verified")
+def _items_status_verified():
+    return status_case(BOTH_CYCLES)
+
+
+@case("items-status-partial")
+def _items_status_partial():
+    return status_case(FIRST_CYCLE)
+
+
+@case("items-status-exempt")
+def _items_status_exempt():
+    return status_case([baseline()])
+
+
+@case("items-status-failed")
+def _items_status_failed():
+    return status_case([baseline(), RED_1, FAILED_GREEN])
+
+
+@case("items-status-blocked")
+def _items_status_blocked():
+    return status_case(FIRST_CYCLE + [RED_2], decisions=[dn("DN-01", "T014")])
+
+
+@case("items-status-mixed-exemption")
+def _items_status_mixed_exemption():
+    return status_case(FIRST_CYCLE, items=BASE_ITEMS + [MIXED])
+
+
+# Compliance cases: a finished feature with items.
+OBLIGATION_ROWS = (VERIFIED_1, VERIFIED_2)
+
+
+def item_summary(item_lines, not_verified="FR-003 (exempt: see plan)", changes="none", rows=OBLIGATION_ROWS):
+    head = summary(*rows, not_verified=not_verified)
+    table_head = (
+        "| Behaviour item | Scenario | Obligations | Status | Tests |\n"
+        "|----------------|----------|-------------|--------|-------|\n"
+    )
+    before, after = head.split("\n\n**Not verified**", 1)
+    return (
+        before
+        + "\n\n"
+        + table_head
+        + "\n".join(item_lines)
+        + "\n\n**Not verified**"
+        + after.replace(
+            "\n\n**Pre-existing failures**", "\n\n**Item changes**: " + changes + ".\n\n**Pre-existing failures**", 1
+        )
+    )
+
+
+VERIFIED_ITEM_LINES = [
+    "| BI-001 | US1-AS1 | VO-001 | verified | assert, pass |",
+    "| BI-002 | US1-AS2 | VO-002 | verified | assert, pass |",
+    "| BI-003 | - | exemption FR-003 | exempt | - |",
+    "| BI-004 | - | VO-002 | verified | assert, pass |",
+]
+
+
+def compliant_items(items=BASE_ITEMS, rows=None, changes=(), summary_text=None, **more):
+    text = summary_text if summary_text is not None else item_summary(VERIFIED_ITEM_LINES)
+    return item_case(
+        items=items, rows=rows, changes=changes, records=BOTH_CYCLES, tasks=EVERY_TASK, summary=text, **more
+    )
+
+
+CASES["compliance-c8-pass"] = compliant_items
+
+
+@case("compliance-c8-missing-checklist")
+def _compliance_c8_missing_checklist():
+    files = compliant_items()
+    del files["tests/behaviour-checklist.md"]
+    return files
+
+
+@case("compliance-c8-rule-fails")
+def _compliance_c8_rule_fails():
+    # BI-003 deleted from the checklist and recorded as removed: FR-003 is then named by no item (B1).
+    removal = bx("BX-01", "BI-003", "removed", requirements="FR-003")
+    lines = [line for line in VERIFIED_ITEM_LINES if "BI-003" not in line]
+    return compliant_items(items=[CL_ITEM_1, CL_ITEM_2, CL_ITEM_4], changes=[removal],
+                           summary_text=item_summary(lines, changes="BX-01 on BI-003, removed (recorded)"))  # fmt: skip
+
+
+@case("compliance-c8-unrecorded-change")
+def _compliance_c8_unrecorded_change():
+    lines = list(VERIFIED_ITEM_LINES)
+    return compliant_items(items=[CL_ITEM_1, CL_ITEM_2_CHANGED, CL_ITEM_3, CL_ITEM_4],
+                           summary_text=item_summary(lines, changes="BI-002 changed, not recorded"))  # fmt: skip
+
+
+@case("compliance-c8-id-reused")
+def _compliance_c8_id_reused():
+    files = _item_id_reused()
+    files["tasks.md"] = EVERY_TASK
+    files["tdd-evidence.md"] = evidence(BOTH_CYCLES, summary=item_summary(VERIFIED_ITEM_LINES)) + item_tables(
+        item_rows(), [bx("BX-01", "BI-004", "removed", requirements="SC-001")]
+    )
+    return files
+
+
+@case("compliance-c7-item-stale")
+def _compliance_c7_item_stale():
+    # The stored Summary shows BI-004 verified; its obligation VO-002 has no records.
+    stale = item_summary(VERIFIED_ITEM_LINES)
+    return item_case(records=FIRST_CYCLE, tasks=done(TASKS, "T011", "T012"), summary=stale)
+
+
+# ---------------------------------------------------------------------------
+# 003 parser cases (T005): the None row, Manual verification, Deferrals, Manual results
+# ---------------------------------------------------------------------------
+
+ENV_FAILURE = rec(
+    "T013", "VO-002", "red", "unit", "assert", "fail", "yes", "environment", "tests/test_cart.py", FP_B,
+    "expected: AssertionError",
+)  # fmt: skip
+
+
+@case("parse-no-tooling")
+def _parse_no_tooling():
+    return no_tooling()
+
+
+@case("parse-no-tooling-with-command")
+def _parse_no_tooling_with_command():
+    first = COMMAND_ROWS.splitlines(keepends=True)[0]
+    return variant(plan=swap(PLAN, first, NO_TOOLING_ROW + first))
+
+
+@case("parse-manual-valid")
+def _parse_manual_valid():
+    rows = [
+        mv("MV-001"),
+        mv("MV-002", covers="VO-001, US1-AS1", steps="Total an empty cart by hand", expected="The total reads 0"),
+    ]
+    return with_manual(rows)
+
+
+@case("parse-manual-none")
+def _parse_manual_none():
+    return with_manual([])
+
+
+@case("parse-manual-wrong-header")
+def _parse_manual_wrong_header():
+    files = with_manual()
+    files["plan.md"] = swap(files["plan.md"], "| ID | Covers | Steps |", "| ID | Covers | Procedure |")
+    return files
+
+
+def evidence_with_new_tables(deferrals=None, results=None):
+    deferrals = deferrals or [
+        df("DF-01", "VO-002", reason="needs queue", basis="environment failure #4"),
+        df("DF-02", "VO-001", reason="too slow", basis="other", needs="yes", approved="A Person", time=stamp(42)),
+    ]
+    results = results or [
+        mr("MR-01", "MV-001", result="fail", note="the header overlaps"),
+        mr("MR-02", "MV-001", result="pass", note="fixed", time=stamp(43)),
+    ]
+    text = evidence(VALID_RECORDS + [ENV_FAILURE], summary=EXAMPLE_SUMMARY)
+    return text + deferrals_table(deferrals) + manual_results_table(results)
+
+
+@case("parse-deferrals-valid")
+def _parse_deferrals_valid():
+    files = with_manual()
+    files["tdd-evidence.md"] = evidence_with_new_tables()
+    return files
+
+
+@case("parse-deferrals-wrong-header")
+def _parse_deferrals_wrong_header():
+    files = _parse_deferrals_valid()
+    files["tdd-evidence.md"] = swap(
+        files["tdd-evidence.md"], "| Basis | Needs approval |", "| Because | Needs approval |"
+    )
+    return files
+
+
+@case("parse-manual-results-wrong-header")
+def _parse_manual_results_wrong_header():
+    files = _parse_deferrals_valid()
+    files["tdd-evidence.md"] = swap(files["tdd-evidence.md"], "| Recorded by | Note |", "| Signed | Note |")
+    return files
+
+
+# ---------------------------------------------------------------------------
+# No test tooling, User Story 1 (T007, T009, T011)
+# ---------------------------------------------------------------------------
+
+
+def as_no_tooling(files, evidence_kept=False):
+    """The same feature with its commands table replaced by the ``None`` row, and no evidence unless kept."""
+    files = dict(files)
+    files["plan.md"] = swap(files["plan.md"], COMMAND_ROWS, NO_TOOLING_ROW)
+    if not evidence_kept:
+        files.pop("tdd-evidence.md", None)
+    return files
+
+
+CASES["no-tooling-valid"] = no_tooling
+
+
+@case("no-tooling-with-command")
+def _no_tooling_with_command():
+    return variant(plan=swap(PLAN, COMMAND_ROWS, NO_TOOLING_ROW + COMMAND_ROWS))
+
+
+@case("no-tooling-bad-checklist")
+def _no_tooling_bad_checklist():
+    item = with_item(CL_ITEM_1, expresses=["FR-001", "FR-099", "US1-AS1"])
+    return as_no_tooling(cl_case(sections=cl_sections(items1=[item])))
+
+
+@case("no-tooling-empty-table")
+def _no_tooling_empty_table():
+    return variant(plan=swap(PLAN, COMMAND_ROWS, ""), evidence=None)
+
+
+@case("no-tooling-complete")
+def _no_tooling_complete():
+    return no_tooling(tasks=EVERY_TASK)
+
+
+@case("no-tooling-open-decision")
+def _no_tooling_open_decision():
+    return no_tooling(tasks=done(TASKS, "T011"), evidence=evidence([], decisions=[dn("DN-01", "T013, T014")]))
+
+
+@case("no-tooling-checklist-changed")
+def _no_tooling_checklist_changed():
+    # A requirement added after the checklist was written: no item expresses it (B1).
+    return as_no_tooling(_g11_requirement_added())
+
+
+# The Summary of a feature that records no test tooling, written out by hand (data-model.md, FR-006, FR-012).
+NO_TOOLING_SUMMARY = (
+    "_Generated from the tables below on 2026-10-10T14:00:00Z._\n\n"
+    "| Obligation | Requirements | Status | Tests | Latest result |\n"
+    "|------------|--------------|--------|-------|---------------|\n"
+    "| VO-001 | FR-001, US1-AS1 | deferred | - | - |\n"
+    "| VO-002 | FR-002, US1-AS2, SC-001, DC-01, EC-01 | deferred | - | - |\n\n"
+    "No test tooling: nothing is verified by tests\n\n"
+    "Not verified by tests\n\n"
+    "- VO-001 deferred: no test tooling\n"
+    "- VO-002 deferred: no test tooling\n\n"
+    "Counts: verified 0, deferred 2\n\n"
+    "**Not verified**: FR-001 (VO-001 deferred), US1-AS1 (VO-001 deferred), FR-002 (VO-002 deferred), "
+    "US1-AS2 (VO-002 deferred), SC-001 (VO-002 deferred), DC-01 (VO-002 deferred), EC-01 (VO-002 deferred), "
+    "FR-003 (exempt: see plan).\n\n"
+    "**Open decisions**: none. **Exceptions**: none. **Expectation changes**: none.\n\n"
+    "**Pre-existing failures**: none.\n"
+)
+
+
+@case("no-tooling-all-deferred")
+def _no_tooling_all_deferred():
+    # Every task complete, an evidence document with no records, and the Summary the view regenerates.
+    return no_tooling(tasks=EVERY_TASK, evidence=evidence([], summary=NO_TOOLING_SUMMARY))
+
+
+@case("no-tooling-with-runs")
+def _no_tooling_with_runs():
+    # A baseline was recorded, and the plan was then changed to record no test tooling (EC-04).
+    return no_tooling(tasks=EVERY_TASK, evidence=evidence([baseline()], summary=NO_TOOLING_SUMMARY))
+
+
+# ---------------------------------------------------------------------------
+# Deferral, User Story 2 (T013)
+# ---------------------------------------------------------------------------
+
+ENV_FAILURE_VO1 = rec(
+    "T011", "VO-001", "red", "unit", "assert", "fail", "yes", "environment", "tests/test_cart.py", FP_A,
+    "expected: AssertionError",
+)  # fmt: skip
+
+
+@case("defer-env-failure")
+def _defer_env_failure():
+    # Record 4 is a failure of VO-002 classified environment; VO-001 has no such failure.
+    return variant(evidence=evidence(VALID_RECORDS + [ENV_FAILURE]))
+
+
+@case("defer-two-obligations")
+def _defer_two_obligations():
+    # Each obligation has its own environment failure: #4 for VO-001 and #5 for VO-002.
+    return variant(evidence=evidence(VALID_RECORDS + [ENV_FAILURE_VO1, ENV_FAILURE]))
+
+
+@case("defer-no-failure")
+def _defer_no_failure():
+    # No evidence document at all: nothing was ever run.
+    return variant(evidence=None)
+
+
+@case("defer-no-tooling")
+def _defer_no_tooling():
+    return no_tooling()
+
+
+# Gate, status and compliance cases for deferrals (T015). Record 4 is a failure of VO-002 that did not
+# count as a failing-first run (Valid no), as a run whose output lacked the expected text is.
+ENV_RED = rec(
+    "T013", "VO-002", "red", "unit", "assert", "fail", "no", "environment", "tests/test_cart.py", FP_B,
+    "the expected text was not in the output",
+)  # fmt: skip
+DEFECT_RED = dict(ENV_RED, Classification="defect")
+OPEN_T013 = done(TASKS, "T011", "T012")
+ENV_BASIS = "environment failure #4"
+
+
+def deferral_case(deferrals, records, exceptions=(), tasks=OPEN_T013, summary=DEFAULT_SUMMARY):
+    files = variant(tasks=tasks, evidence=evidence(records, exceptions=exceptions, summary=summary))
+    if deferrals:
+        files["tdd-evidence.md"] += deferrals_table(deferrals)
+    return files
+
+
+@case("deferred-standing")
+def _deferred_standing():
+    return deferral_case([df("DF-01", "VO-002", basis=ENV_BASIS)], VALID_RECORDS + [ENV_RED])
+
+
+@case("deferred-waiting")
+def _deferred_waiting():
+    waiting = df("DF-01", "VO-002", reason="too slow", basis="other", needs="yes")
+    return deferral_case([waiting], VALID_RECORDS + [ENV_RED])
+
+
+@case("deferred-approved")
+def _deferred_approved():
+    approved = df("DF-01", "VO-002", reason="too slow", basis="other", needs="yes", approved="A Person")
+    return deferral_case([approved], VALID_RECORDS + [ENV_RED])
+
+
+@case("deferred-then-verified")
+def _deferred_then_verified():
+    # The deferral rests on record 4; the test was then written, failed first and passed.
+    records = VALID_RECORDS + [ENV_RED, red("T013", "VO-002"), green("T014", "VO-002")]
+    return deferral_case([df("DF-01", "VO-002", basis=ENV_BASIS)], records)
+
+
+@case("deferred-and-blocked-exception")
+def _deferred_and_blocked_exception():
+    blocked = exc("EX-01", "T013", "VO-002", "environment-blocked", "The test database cannot be reached", "-", after=4)
+    return deferral_case([df("DF-01", "VO-002", basis=ENV_BASIS)], VALID_RECORDS + [ENV_RED], exceptions=[blocked])
+
+
+@case("deferred-after-failure")
+def _deferred_after_failure():
+    # The latest record of the task is a defect failure; a person approved the deferral.
+    approved = df("DF-01", "VO-002", reason="too slow", basis="other", needs="yes", approved="A Person")
+    return deferral_case([approved], VALID_RECORDS + [DEFECT_RED])
+
+
+DEFERRED_SUMMARY = (
+    "_Generated from the tables below on 2026-10-10T14:00:00Z._\n\n"
+    "| Obligation | Requirements | Status | Tests | Latest result |\n"
+    "|------------|--------------|--------|-------|---------------|\n"
+    "| VO-001 | FR-001, US1-AS1 | verified | assert, pass | pass (#3) |\n"
+    "| VO-002 | FR-002, US1-AS2, SC-001, DC-01, EC-01 | deferred | assert | fail (#4) |\n\n"
+    "Not verified by tests\n\n"
+    "- VO-002 deferred: needs queue (DF-01)\n\n"
+    "Counts: verified 1, deferred 1\n\n"
+    "**Not verified**: FR-002 (VO-002 deferred), US1-AS2 (VO-002 deferred), SC-001 (VO-002 deferred), "
+    "DC-01 (VO-002 deferred), EC-01 (VO-002 deferred), FR-003 (exempt: see plan).\n\n"
+    "**Open decisions**: none. **Exceptions**: none. **Expectation changes**: none.\n\n"
+    "**Pre-existing failures**: none.\n"
+)
+
+
+@case("deferred-compliant")
+def _deferred_compliant():
+    # Every task complete, a passing checkpoint, one obligation deferred on an environment failure.
+    return deferral_case(
+        [df("DF-01", "VO-002", basis=ENV_BASIS)],
+        VALID_RECORDS + [ENV_RED, checkpoint()],
+        tasks=EVERY_TASK,
+        summary=DEFERRED_SUMMARY,
+    )
+
+
+# Manual verification rules M1 and M2 (T017)
+@case("m1-missing-steps")
+def _m1_missing_steps():
+    return with_manual([mv(steps="-")])
+
+
+@case("m1-missing-expected")
+def _m1_missing_expected():
+    return with_manual([mv(expected="-")])
+
+
+@case("m1-missing-why")
+def _m1_missing_why():
+    return with_manual([mv(why="-")])
+
+
+@case("m1-bad-id")
+def _m1_bad_id():
+    return with_manual([mv("MV-1")])
+
+
+@case("m1-duplicate-id")
+def _m1_duplicate_id():
+    return with_manual([mv("MV-001"), mv("MV-001", covers="FR-001")])
+
+
+@case("m2-unknown-requirement")
+def _m2_unknown_requirement():
+    return with_manual([mv(covers="FR-099")])
+
+
+@case("m2-unknown-obligation")
+def _m2_unknown_obligation():
+    return with_manual([mv(covers="VO-009")])
+
+
+CASES["manual-none"] = lambda: with_manual([])
+
+
+@case("manual-valid")
+def _manual_valid():
+    # MV-001 covers a requirement that is also exempted (EC-08); MV-002 a scenario and an obligation.
+    return with_manual([mv("MV-001", covers="FR-003"), mv("MV-002", covers="VO-001, US1-AS2")])
+
+
+# Manual checks recorded and reported (T019). A finished feature whose Summary is written out by hand.
+def manual_compliant(results, entries, counts):
+    block = "Not verified by tests\n\n" + "".join(f"- {entry}\n" for entry in entries) + f"\nCounts: {counts}\n\n"
+    summary_text = swap(COMPLIANT_SUMMARY, "**Not verified**:", block + "**Not verified**:")
+    text = evidence(BOTH_CYCLES, summary=summary_text)
+    if results:
+        text += manual_results_table(results)
+    return with_manual(tasks=EVERY_TASK, evidence=text)
+
+
+CASES["manual-open"] = lambda: manual_compliant(
+    [], ["MV-001 manual: open"], "verified 2, deferred 0, manual checks 1 open"
+)
+CASES["manual-pass"] = lambda: manual_compliant(
+    [mr("MR-01", "MV-001", "pass")],
+    ["MV-001 manual: pass by A Person"],
+    "verified 2, deferred 0, manual checks 0 open, 1 passed",
+)
+CASES["manual-fail"] = lambda: manual_compliant(
+    [mr("MR-01", "MV-001", "fail")],
+    ["MV-001 manual: fail by A Person"],
+    "verified 2, deferred 0, manual checks 0 open, 1 failed",
+)
+
+
+def manual_item_case(check="MV-001"):
+    item = bi(
+        "BI-003", ["FR-003"], [check],
+        [("Given", "the cart page is shown"), ("When", "the shopper looks at it"),
+         ("Then", "it follows the shop's visual layout")],
+    )  # fmt: skip
+    files = cl_case(other=[item])
+    files["plan.md"] = swap(
+        files["plan.md"], "\n## Project Structure", "\n" + manual_table([mv()]) + "\n## Project Structure"
+    )
+    return files
+
+
+CASES["manual-item"] = manual_item_case
+CASES["manual-item-unknown"] = lambda: manual_item_case("MV-099")
+
+
+# ---------------------------------------------------------------------------
 
 
 def write_case(name, files):
@@ -1009,15 +2245,21 @@ def write_case(name, files):
         shutil.rmtree(folder)
     os.makedirs(folder)
     for filename, text in sorted(files.items()):
-        with open(os.path.join(folder, filename), "w", encoding="utf-8") as handle:
+        path = os.path.join(folder, filename)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
 
 
-def main():
-    for name in sorted(CASES):
+def main(names=()):
+    """Write every case, or only the cases named on the command line."""
+    chosen = sorted(names) if names else sorted(CASES)
+    for name in chosen:
         write_case(name, CASES[name]())
-    print(f"wrote {len(CASES)} fixture features")
+    print(f"wrote {len(chosen)} fixture features")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(sys.argv[1:])

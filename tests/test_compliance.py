@@ -11,6 +11,7 @@ OUT_OF_DATE = (
 )
 COMPLIANT_RUN = os.path.join("examples", "runs", "compliant")
 TESTS_ONLY_RUN = os.path.join("examples", "runs", "tests-only")
+FRONTEND_RUN = os.path.join("examples", "runs", "frontend-planned")
 
 
 class ComplianceCase(RepoCase):
@@ -166,14 +167,128 @@ class ComplianceBehaviourTests(ComplianceCase):
         self.assertIn("spec.md", result.err)
 
 
+class NoToolingComplianceTests(ComplianceCase):
+    """No test tooling gives notices, never a failure (FR-020, EC-04, EC-06, SC-003)."""
+
+    NOTICES = [
+        "notice: no test tooling is recorded: nothing is verified by tests",
+        "notice: VO-001 deferred: no test tooling",
+        "notice: VO-002 deferred: no test tooling",
+    ]
+
+    def test_a_complete_feature_is_compliant_with_notices_and_exit_0(self):
+        result = self.compliance("no-tooling-complete")
+        self.assertEqual((result.code, result.err), (0, ""), result)
+        self.assertEqual(result.out.splitlines(), ["COMPLIANT"] + self.NOTICES)
+
+    def test_every_obligation_deferred_with_an_evidence_document_is_compliant_and_c7_holds(self):
+        result = self.compliance("no-tooling-all-deferred")
+        self.assertEqual((result.code, result.out.splitlines()), (0, ["COMPLIANT"] + self.NOTICES), result)
+
+    def test_json_carries_the_notices_and_the_verdict(self):
+        data = json.loads(self.compliance("no-tooling-complete", "--json").out)
+        self.assertEqual((data["verdict"], data["exit_code"], data["findings"]), ("COMPLIANT", 0, []))
+        self.assertEqual([f"notice: {text}" for text in data["notices"]], self.NOTICES)
+
+    def test_a_feature_with_a_command_has_no_notices_and_no_key(self):
+        self.assert_compliant("compliance-c1-pass")
+        self.assertNotIn("notices", json.loads(self.compliance("compliance-c1-pass", "--json").out))
+
+    def test_a_baseline_beside_the_none_row_is_c9(self):
+        result = self.compliance("no-tooling-with-runs")
+        self.assertEqual(result.code, 1, result)
+        self.assertEqual(
+            result.out.splitlines(),
+            [
+                "NON-COMPLIANT",
+                "C9 tdd-evidence.md: the plan records no test tooling but the evidence holds a baseline or runs",
+            ]
+            + self.NOTICES,
+        )
+
+    def test_a_declared_command_beside_the_none_row_is_c9_as_well_as_a_plan_finding(self):
+        lines = self.compliance("no-tooling-with-command").out.splitlines()
+        self.assertEqual(lines[0], "NON-COMPLIANT")
+        self.assertIn(
+            "PLAN None: the commands table records no test tooling and also declares a command: keep one", lines
+        )
+        self.assertIn("C9 plan.md: the plan records no test tooling and also declares a command", lines)
+
+    def test_compliance_writes_nothing(self):
+        for fixture in ("no-tooling-complete", "no-tooling-with-runs"):
+            root = self.repo(fixture)
+            before = snapshot(root)
+            self.check(["compliance"], root)
+            self.assertEqual(snapshot(root), before)
+
+
+class RuleC8Tests(ComplianceCase):
+    """C8: the checklist rules, and every item changed or removed without an accepted record."""
+
+    def test_a_finished_feature_with_a_sound_checklist_is_compliant(self):
+        self.assert_compliant("compliance-c8-pass")
+
+    def test_a_missing_checklist_is_reported(self):
+        self.assert_non_compliant(
+            "compliance-c8-missing-checklist",
+            "C8 tests/behaviour-checklist.md: CHECKLIST: the file does not exist or cannot be read",
+            only=False,
+        )
+
+    def test_a_failing_checklist_rule_is_reported_with_its_rule_id(self):
+        self.assert_non_compliant(
+            "compliance-c8-rule-fails", "C8 FR-003: B1: no behaviour item expresses it", only=False
+        )
+
+    def test_an_item_changed_without_a_record_is_reported(self):
+        self.assert_non_compliant(
+            "compliance-c8-unrecorded-change",
+            "C8 BI-002: changed since the baseline and no change is recorded",
+            only=False,
+        )
+
+    def test_a_reused_id_is_reported(self):
+        self.assert_non_compliant(
+            "compliance-c8-id-reused", "C8 BI-004: removed since the baseline and its id is reused", only=False
+        )
+
+    def test_a_stored_summary_that_shows_an_item_verified_without_the_records_is_out_of_date(self):
+        self.assert_non_compliant("compliance-c7-item-stale", OUT_OF_DATE, only=False)
+
+    def test_an_accepted_change_record_clears_the_finding(self):
+        for fixture in ("item-change-recorded", "item-change-approved", "item-removal-recorded"):
+            with self.subTest(fixture=fixture):
+                lines = self.compliance(fixture).out.splitlines()
+                self.assertFalse([line for line in lines if line.startswith("C8 ")], lines)
+
+    def test_a_change_awaiting_approval_is_reported(self):
+        lines = self.compliance("item-change-awaiting-approval").out.splitlines()
+        self.assertIn("C8 BI-002: change BX-01 alters behaviour and awaits approval", lines)
+
+    def test_a_feature_without_a_checklist_gets_no_c8_finding(self):
+        lines = self.compliance("compliance-c1-pass").out.splitlines()
+        self.assertEqual(lines, ["COMPLIANT"])
+
+    def test_compliance_writes_nothing_for_a_feature_with_items(self):
+        root = self.repo("compliance-c8-unrecorded-change")
+        before = snapshot(root)
+        self.check(["compliance"], root)
+        self.assertEqual(snapshot(root), before)
+
+
 class ExampleRunTests(unittest.TestCase):
     """The two artefact sets shipped for evaluation (FR-057, SC-011)."""
 
     def require(self, feature_dir):
         """The run's artefacts must be there. An empty directory is not a run: git does not track one."""
-        for name in ("spec.md", "plan.md", "tasks.md", "tdd-evidence.md"):
+        for name in ("spec.md", "plan.md", "tasks.md"):
             if not os.path.isfile(os.path.join(REPO, feature_dir, name)):
                 raise AssertionError(f"missing example run artefact: {feature_dir}/{name}")
+        found = [
+            os.path.join(REPO, feature_dir, *parts) for parts in (["tdd-evidence.md"], ["tests", "tdd-evidence.md"])
+        ]
+        if not any(os.path.isfile(path) for path in found):
+            raise AssertionError(f"missing example run artefact: {feature_dir}/tdd-evidence.md")
 
     def run_on(self, feature_dir):
         self.require(feature_dir)
@@ -191,6 +306,34 @@ class ExampleRunTests(unittest.TestCase):
         self.assertTrue(any("G3: no valid failing-first record and no exception" in line for line in lines), lines)
         self.assertFalse(any(line.startswith("C4 ") for line in lines), lines)
 
+    def test_the_compliant_run_keeps_its_checklist_and_evidence_in_tests(self):
+        self.require(COMPLIANT_RUN)
+        base = os.path.join(REPO, COMPLIANT_RUN)
+        self.assertTrue(os.path.isfile(os.path.join(base, "tests", "behaviour-checklist.md")))
+        self.assertTrue(os.path.isfile(os.path.join(base, "tests", "tdd-evidence.md")))
+        self.assertFalse(os.path.exists(os.path.join(base, "tdd-evidence.md")))
+
+    def test_the_frontend_example_passes_the_plan_check_and_has_a_scenario_section(self):
+        base = os.path.join(REPO, FRONTEND_RUN)
+        for name in ("spec.md", "plan.md", os.path.join("tests", "behaviour-checklist.md")):
+            if not os.path.isfile(os.path.join(base, name)):
+                raise AssertionError(f"missing example artefact: {FRONTEND_RUN}/{name}")
+        result = run_check(["plan", "--feature-dir", FRONTEND_RUN], REPO)
+        self.assertEqual((result.code, result.out), (0, "plan: passed\n"), result)
+        with open(os.path.join(base, "tests", "behaviour-checklist.md")) as handle:
+            sections = [line for line in handle if line.startswith("## US")]
+        self.assertGreaterEqual(len(sections), 1)
+
+    def test_story_08_exists_and_expects_b5_and_b1(self):
+        path = os.path.join(REPO, "examples", "stories", "08-behaviours-from-the-code.md")
+        if not os.path.isfile(path):
+            raise AssertionError("missing story: examples/stories/08-behaviours-from-the-code.md")
+        with open(path) as handle:
+            text = handle.read()
+        expected = text.split("## Expected behaviour", 1)[1]
+        self.assertIn("B5", expected)
+        self.assertIn("B1", expected)
+
     def test_two_runs_give_byte_identical_output(self):
         for feature_dir in (COMPLIANT_RUN, TESTS_ONLY_RUN):
             first = self.run_on(feature_dir)
@@ -205,5 +348,132 @@ class ExampleRunTests(unittest.TestCase):
             self.assertEqual(snapshot(os.path.join(REPO, feature_dir)), before)
 
 
+class DeferredComplianceTests(ComplianceCase):
+    """Deferred obligations are notices, never findings (FR-020, SC-003)."""
+
+    def test_a_feature_with_a_standing_deferral_is_compliant_with_a_notice(self):
+        result = self.compliance("deferred-compliant")
+        self.assertEqual((result.code, result.err), (0, ""), result)
+        self.assertEqual(result.out.splitlines(), ["COMPLIANT", "notice: VO-002 deferred: needs queue (DF-01)"])
+
+    def test_json_carries_the_notice(self):
+        data = json.loads(self.compliance("deferred-compliant", "--json").out)
+        self.assertEqual((data["verdict"], data["exit_code"]), ("COMPLIANT", 0))
+        self.assertEqual(data["notices"], ["VO-002 deferred: needs queue (DF-01)"])
+
+    def test_a_changed_deferral_row_breaks_the_chain_under_c4(self):
+        root = self.repo("deferred-compliant")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("| VO-002 | needs queue |", "| VO-002 | no longer needed |"))
+        result = self.check(["compliance"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(
+            "C4 DF-01: the check value does not match the row: the record was changed after it was written",
+            result.out.splitlines(),
+        )
+
+    def test_an_approver_added_to_a_deferral_does_not_break_the_chain(self):
+        root = self.repo("deferred-compliant")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.assertIn("| no | - |", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| no | - |", "| no | A Person |"))
+        result = self.check(["compliance"], root)
+        self.assertNotIn("C4", result.out)
+
+    def test_compliance_writes_nothing(self):
+        root = self.repo("deferred-compliant")
+        before = snapshot(root)
+        self.check(["compliance"], root)
+        self.assertEqual(snapshot(root), before)
+
+
+class ManualComplianceTests(ComplianceCase):
+    """Open and failed manual checks are notices, never findings (FR-020, US3 scenarios 4 and 5)."""
+
+    def test_an_open_check_is_a_notice_and_the_feature_is_compliant(self):
+        result = self.compliance("manual-open")
+        self.assertEqual((result.code, result.out.splitlines()), (0, ["COMPLIANT", "notice: MV-001 manual: open"]))
+
+    def test_a_failed_check_is_a_notice_and_the_feature_is_still_compliant(self):
+        result = self.compliance("manual-fail")
+        self.assertEqual(
+            (result.code, result.out.splitlines()), (0, ["COMPLIANT", "notice: MV-001 manual: fail by A Person"])
+        )
+
+    def test_a_passed_check_is_not_a_notice(self):
+        result = self.compliance("manual-pass")
+        self.assertEqual((result.code, result.out), (0, "COMPLIANT\n"))
+
+    def test_json_carries_the_notices(self):
+        data = json.loads(self.compliance("manual-fail", "--json").out)
+        self.assertEqual((data["verdict"], data["notices"]), ("COMPLIANT", ["MV-001 manual: fail by A Person"]))
+
+    def test_a_changed_result_row_breaks_the_chain_under_c4(self):
+        root = self.repo("manual-fail")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.assertIn("| MV-001 | fail |", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| MV-001 | fail |", "| MV-001 | pass |"))
+        result = self.check(["compliance"], root)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn(
+            "C4 MR-01: the check value does not match the row: the record was changed after it was written",
+            result.out.splitlines(),
+        )
+
+    def test_a_changed_note_does_not_break_the_chain(self):
+        root = self.repo("manual-fail")
+        path = os.path.join(self.feature(root), "tdd-evidence.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.assertIn("| A Person | - |", text)
+        with open(path, "w") as handle:
+            handle.write(text.replace("| A Person | - |", "| A Person | looked again |"))
+        self.assertNotIn("C4", self.check(["compliance"], root).out)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+NO_TOOLING_RUN = os.path.join("examples", "runs", "no-tooling")
+DEFERRED_RUN = os.path.join("examples", "runs", "deferred")
+
+
+class NewExampleRunTests(unittest.TestCase):
+    """The no-tooling and deferred examples pass the compliance check with the notices the quickstart lists."""
+
+    def compliance(self, run):
+        if not os.path.isdir(os.path.join(REPO, run)):
+            raise AssertionError(f"missing example run: {run}")
+        return run_check(["compliance", "--feature-dir", run], REPO)
+
+    def test_the_no_tooling_example_is_compliant_with_notices(self):
+        result = self.compliance(NO_TOOLING_RUN)
+        lines = result.out.splitlines()
+        self.assertEqual((result.code, lines[0]), (0, "COMPLIANT"), result)
+        self.assertIn("notice: no test tooling is recorded: nothing is verified by tests", lines)
+        self.assertIn("notice: VO-001 deferred: no test tooling", lines)
+
+    def test_the_deferred_example_is_compliant_with_deferral_notices_and_no_manual_notice(self):
+        result = self.compliance(DEFERRED_RUN)
+        lines = result.out.splitlines()
+        self.assertEqual((result.code, lines[0]), (0, "COMPLIANT"), result)
+        self.assertTrue(any(line.startswith("notice: VO-002 deferred:") for line in lines), lines)
+        self.assertTrue(any(line.startswith("notice: VO-003 deferred:") for line in lines), lines)
+        self.assertFalse(any("manual" in line for line in lines), lines)
+        self.assertFalse(any(line.startswith("notice: VO-001") for line in lines), lines)
+
+    def test_the_runs_readme_names_both(self):
+        with open(os.path.join(REPO, "examples", "runs", "README.md")) as handle:
+            text = handle.read()
+        for name in ("no-tooling/", "deferred/"):
+            self.assertIn(name, text)

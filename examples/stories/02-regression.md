@@ -27,6 +27,9 @@ uses `item_count` to print line numbers.
       developer as a requirement conflict. The existing test file is unchanged.
 - [ ] If the old test had to change because the requirement changed, an Expectation Change
       names the requirement, and where behaviour changed it carries an approval.
+- [ ] The checklist written at planning passes `plan`. If the change alters a behaviour that
+      a fixed item states, the item's change is recorded with `expectation --item` and, where
+      it alters intended behaviour, approved.
 - [ ] The failing test was rerun and the passing run is recorded before the task was
       marked complete.
 - [ ] The final report names any existing test file that was changed, with the reason.

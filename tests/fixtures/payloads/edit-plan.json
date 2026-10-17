@@ -1,0 +1,19 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "{ROOT}/transcript.jsonl",
+  "cwd": "{ROOT}",
+  "prompt_id": "00000000-0000-0000-0000-000000000000",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "{ROOT}/specs/001-demo/plan.md",
+    "old_string": "validate-then-sum function",
+    "new_string": "validate-then-add function",
+    "replace_all": false
+  },
+  "tool_use_id": "toolu_recorded"
+}

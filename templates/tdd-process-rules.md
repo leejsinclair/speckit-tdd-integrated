@@ -20,8 +20,12 @@ Two things do the work:
   work it guards; it is never downgraded to a note.
 
 Verification intent is kept in the feature's `plan.md` (the Verification Plan section) and
-`tasks.md` (task labels). Evidence is kept in `tdd-evidence.md` in the feature directory,
-which only the check script writes.
+`tasks.md` (task labels). The behaviour items the feature must show are kept in
+`tests/behaviour-checklist.md`, which the plan stage writes. Evidence is kept in one
+document that only the check script writes: `tests/tdd-evidence.md` for a feature planned
+after the behaviour checklist was introduced, and `tdd-evidence.md` at the top of the
+feature directory for a feature whose evidence was started before. A feature never holds
+both.
 
 ## Verification intent
 
@@ -64,11 +68,26 @@ recorded in the plan's Verification Plan. It is not invented while the code is w
   written one at a time during implementation, each just before the behaviour it verifies
   (FR-014).
 
+**Edge case ids.** Obligations and behaviour items cite an edge case as `EC-nn`, and the
+checks accept an `EC-` id only if the specification holds it as a whole word. When the
+specification's edge cases carry no ids, label them `EC-01`, `EC-02` in order by adding the
+label to each edge case in the specification, change no other word, and name the labels in
+the Completion Report. Never cite an `EC-` id the specification does not hold.
+
 **Ambiguity.** When a requirement is ambiguous, or contradicts another, in a way that
 changes what a test should assert, put the question to the developer. Do not choose an
 interpretation. Plan nothing for that requirement until it is answered: leave it without
 an obligation, so that the plan check fails and the plan is not reported complete. Record
 the answer in the specification's Clarifications, then write the obligation (FR-015).
+
+**A requirement that existing behaviour stays unchanged.** When a requirement states that
+existing behaviour stays unchanged and the change gives no way to vary that behaviour,
+there is nothing a test can observe: any test would only restate how the language works.
+Do not leave it uncovered and do not put it to the developer as an ambiguity. Exempt it
+with the reason "unchanged by construction: the change gives no way to vary it", give it a
+behaviour item whose *Verified by* is that exemption, and say so in the Completion Report so
+the developer can overrule it. Where the change does add a way to vary the behaviour, it is
+an ordinary requirement and gets an obligation.
 
 **Verification commands.** Take the commands only from what the project already defines:
 its package scripts, Makefile, CI configuration or contributor documentation (FR-049).
@@ -82,6 +101,125 @@ reports that as a gap at its start and again in its final report, names the plan
 the way to bring the feature under the process, and then carries on as core Spec Kit does.
 No check is run and no evidence is recorded for it, and its work is never described as
 verified.
+
+## Behaviour checklist
+
+The behaviour checklist states, in the specification's terms, each behaviour the feature
+must show, and links it to the requirements it comes from and to the obligations that
+verify it. It lets a person judge, before any code is written, whether the planned
+verification covers what the specification asks.
+
+**When and by whom.** The plan stage writes it, after the Verification Plan, because its
+items name obligations and exemptions the Verification Plan holds. Start from the
+extension's template, `.specify/extensions/integrated-tdd/templates/behaviour-checklist-template.md`.
+The Verification Plan carries a `### Behaviour checklist` sub-heading with a fixed line
+linking to the file. The heading is read by the checks: keep it, and add it when the plan
+lacks it.
+
+**Where.** `tests/behaviour-checklist.md` in the feature directory, and never in
+`checklists/`. Spec Kit's own checklist scan reads `checklists/`, and a file there with
+unchecked boxes would hold up implementation; this file has no checkboxes and is not a
+requirements-quality review. The `tests/` folder holds verification material about the
+feature. It is not where the project's executable tests live. The evidence document goes
+in the same folder for a feature planned after the checklist was introduced
+(`tests/tdd-evidence.md`); a feature whose evidence was started earlier keeps
+`tdd-evidence.md` at the top of the feature directory. A feature never holds both.
+
+**Layout.** Write one section per acceptance scenario, in order, headed `## USn-ASm`, which opens
+with the scenario's text from the specification as a block quote, word for word. Then one
+`## Other behaviours` section, when needed, for behaviour that refines no scenario: a
+requirement with no scenario of its own, an edge case with an outcome of its own, a
+measured success criterion the Verification Plan verifies. Under a section, each item is
+one line,
+
+```text
+- **BI-001** Expresses: FR-001, US1-AS1. Verified by: VO-001.
+```
+
+followed by indented clauses in the order Given, When, Then (`**Given**`, `**When**`,
+`**Then**`), with `**And**` clauses where one action has several outcomes. *Expresses* lists the `FR-`,
+`SC-`, `USn-ASm` and `EC-` ids the item comes from. *Verified by* lists `VO-` obligations
+and `exemption <requirement id>` entries. Item ids are `BI-` and three digits, numbered in
+order of creation and never reused.
+
+**What an item says.**
+
+- An item refines a scenario: it keeps the scenario's terms and states every outcome the
+  scenario states, none weaker. It may add concrete values and the boundary the
+  specification describes. It never replaces an outcome with a vaguer one (FR-016).
+- State what can be observed at the boundary the specification describes: what a user sees
+  or can do, what a caller receives, what is stored and can be read back, what is refused
+  (FR-011).
+- An item names no file, module, function, class, table, endpoint or screen component, and
+  no step of how the feature is built (FR-012). The exception is a file the specification
+  itself names as part of the behaviour it describes: the check allows what the
+  specification says.
+- Add no behaviour the specification does not state (FR-013). A behaviour found in the
+  code and not in the specification is not an item: it is a question for the developer.
+- Keep it in proportion. One item per behaviour, and no two items for one behaviour
+  (FR-015). A small, low-risk change has one item per acceptance scenario and per
+  requirement with no scenario, and no more.
+- There is no checkbox and no status in the file (FR-014). What is verified is derived from
+  the evidence and shown by `status`.
+- A requirement that has an exemption still gets an item, whose *Verified by* is the
+  exemption: the item states what is expected, and the exemption says how it is checked
+  instead.
+- Edge cases and measured success criteria that the Verification Plan verifies get items
+  under Other behaviours.
+- When a requirement is ambiguous in a way that changes what an item should say, put the
+  question to the developer as under "Verification intent" and leave the item out until it
+  is answered.
+
+**Fixed at the baseline, changed afterwards.** The items are fixed from the first recorded
+run: the check script records each item's content and the obligations it names, once,
+and refuses a baseline while the checklist fails. After that:
+
+- Adding an item for a discovered obligation is allowed, and the item comes before the
+  obligation's test: add the item (or add the obligation to an existing item's *Verified
+  by*), rerun `plan`, then write the test. A Red run for an obligation that no item names
+  is refused.
+- Linking an obligation to an existing item is not a change to the item.
+- Changing the wording of a fixed item, or removing one, is a change to what the feature
+  must show. Record it with `tdd_check.py expectation --item <item id> --requirement <id>
+  --justification "<why>"`, adding `--alters-behaviour` when it alters what the
+  specification asks. The tasks that verify the item are held until the change is recorded,
+  and approved when it alters behaviour: explain it to the developer, and record
+  `approve --id <BX-nn> --by "<name>"` only after the developer has approved in the
+  conversation.
+- An id is never reused. A removed item's id is not given to another behaviour.
+- While the checklist fails the checks the `plan` stage applies, no task can be marked
+  complete (the gate rule G11): it is brought back into line, through the specification or
+  the Verification Plan first.
+
+**Check.** The `plan` check covers the checklist: every requirement and scenario is named
+by an item, every item names obligations or exemptions that exist, every obligation is
+named by an item, the format holds, no item names a code element the design introduces,
+and every quote matches the specification. The plan is not complete while a finding
+remains. The check does not decide whether an item keeps its scenario's wording closely
+enough, whether two items describe one behaviour, or whether an item adds behaviour; those
+are for the plan stage to get right and for the reviewer to judge.
+
+### Reviewing the checklist
+
+A person can judge the checklist from the specification and the checklist alone, before any
+code is written, without the plan or the task list.
+
+- **What the reviewer compares.** The reviewer compares each scenario's quote against its
+  items: every outcome the scenario states appears in the items, none weaker. Whether every requirement is named
+  by an item, and whether nothing goes beyond the specification: no item states a behaviour
+  the specification does not.
+- **The side-by-side view.** `python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py status --scenarios`
+  prints each scenario's quote with the items that refine it, each item with the
+  requirements it expresses and the obligations that verify it, and then the Other
+  behaviours. It needs no evidence and changes no file.
+- **Corrections go through the specification first.** When the reviewer finds the
+  checklist wrong because the specification or the Verification Plan is wrong, a correction
+  is made in `spec.md` or the Verification Plan first and then carried into the checklist,
+  so that the quotes and the obligations it names stay in line. A correction to the
+  checklist alone, to an item's wording, is made in the checklist.
+- **Review is asked for and never awaited.** The plan stage asks for review and waits for
+  no approval: the plan is reported complete when the check passes, and a correction found
+  later follows the route above.
 
 ## The Red, Green, Refactor cycle
 
@@ -137,8 +275,8 @@ baseline exists.
 - When a run fails, resolve the failure before starting dependent work (FR-026). The
   section on failures says how.
 - Before marking a task complete, run `gate --task <task id>`. The edit that marks a task
-  `[X]` is refused while its gate fails. Never edit `tdd-evidence.md`: only the script
-  writes it.
+  `[X]` is refused while its gate fails. Never edit `tdd-evidence.md` or
+  `tests/tdd-evidence.md`: only the script writes the evidence.
 - A routine cycle involves no approval request (FR-053). Ask the developer only for what
   the sections on test integrity and on failures, exceptions and decisions name.
 
@@ -290,20 +428,56 @@ python3 .specify/extensions/integrated-tdd/scripts/python/tdd_check.py decision 
 - Never proceed on an assumed answer.
 - When every remaining task depends on an open decision, stop and report.
 
+## When verification is not possible
+
+Some work cannot be verified by an automated test. Three cases are named, and each is
+stated in the evidence and the reports rather than passed over.
+
+**The project has no test tooling.** The plan stage records a single `None` row in the
+Verification commands table, says the project has no test tooling, and carries on. The
+process never chooses or installs a test framework, and writes no example tests for a
+project that has none: choosing one belongs to the developer. In this no-tooling mode no
+`run` is made, tasks are marked complete once their work is done, and every report says
+nothing is verified by tests. Declaring a command in the table later switches the checks
+on, with no other change.
+
+**An obligation's test cannot be run now.** A service is unreachable or an environment is
+broken. Classify the failed run as `environment`, then record a deferral of the obligation
+with the reason (`defer --vo <id> --reason "<why>"`). A deferral is explicit, reasoned and
+reported. It does not make the obligation verified, and it is lifted by a later passing
+run. Who may defer: the agent may record a deferral that follows an `environment`
+classification. A deferral on any other ground, or one the developer should judge, needs
+the developer's approval, recorded with `approve --id <DF-nn> --by "<name>"` only after the
+developer has given it in the conversation.
+
+**A behaviour cannot be automated.** The plan stage lists it as a manual check in the
+Manual verification table, with its steps, the expected result and why it is not
+automated. A person does the check and records the result with `manual --check <MV-nnn>
+--result <pass|fail> --by "<name>"`. The result is a person's own word: the agent never
+records one on their behalf and never invents a name.
+
+Nothing deferred or manual is reported as verified. Each is listed under "Not verified by
+tests" with its state, and the counts of verified obligations, deferred obligations and
+open, failed and passed manual checks are reported. An open or failed manual check is a
+notice, not a failure of the gate.
+
 ## Traceability and review evidence
 
 A reviewer who took no part in the work must be able to say, for any requirement, whether
 it is verified, by which tests and with what result, from the feature's artefacts alone.
 
-- **The chain is requirement, obligation, task, test, record.** The plan's obligations name
-  the requirements they verify. Task labels name the obligations. Each recorded run names
-  its task, its obligations and the test it selected. Keep every link: use the obligation's
-  real id on the task and on the run.
+- **The chain is requirement, behaviour item, obligation, task, test, record.** The
+  checklist's behaviour items name the requirements and scenarios they express and the
+  obligations that verify them. The plan's obligations name the requirements they verify.
+  Task labels name the obligations. Each recorded run names its task, its obligations and
+  the test it selected. Keep every link: use the obligation's real id on the task and on
+  the run.
 - **A scenario discovered during implementation is added before its test is written.** Add
   it to the plan's obligations table with origin `discovered` and the requirements it
   verifies, give it the next unused `VO-` id, and add its test task and behaviour task to
-  `tasks.md` with that label. Then write the test. Never leave a test that traces to no
-  obligation (FR-016).
+  `tasks.md` with that label. Then link it to a behaviour item: an obligation is linked to
+  a behaviour item before its test is written. Then write the test. Never leave a test that
+  traces to no obligation, or an obligation that traces to no item (FR-016, FR-032).
 - **When a requirement, a design decision or the implementation changes**, update the
   obligations, tasks and tests it affects, and rerun the `plan` and `tasks` checks. A
   changed expectation in a test that has already had its Red run is recorded as the Test

@@ -3,11 +3,12 @@
 import calendar
 import os
 import re
+import shutil
 import time
 import unittest
 
 from fixtures.make_features import check_value, fingerprint
-from support import EVIDENCE_REL, RunCase, evidence_text, records, snapshot, table_rows, write
+from support import EVIDENCE_REL, RepoCase, RunCase, evidence_text, read, records, snapshot, table_rows, write
 
 BROKEN = "| broken | `sh tests/fixtures/bin/fake_test.sh assert` | broad | tests/fixtures/bin |"
 OTHER_TOOL = (
@@ -845,6 +846,138 @@ class DecisionTests(RecordingCase):
         self.open("T013")
         self.check(["decision", "resolve", "--id", "DN-01", "--answer", "Zero", "--by", "Lee"], self.root)
         self.assert_only_evidence_changed(before)
+
+
+class BaselineRefusedWhileChecklistFailsTests(RunCase):
+    """The baseline is refused while the checklist fails (contracts/check-cli-changes.md section 4)."""
+
+    MESSAGE = "the behaviour checklist must pass before implementation begins"
+
+    def assert_refused(self, case, *findings):
+        self.fixture = case
+        self.setUp()
+        before = snapshot(self.root)
+        result = self.run_phase("baseline", "suite")
+        self.assertEqual(result.code, 2, result)
+        self.assertEqual(result.out, "")
+        self.assertIn(self.MESSAGE, result.err)
+        for finding in findings:
+            self.assertIn(finding, result.err.splitlines())
+        self.assertEqual(snapshot(self.root), before)
+        self.assertFalse(self.has_evidence())
+        self.assertFalse(os.path.exists(os.path.join(self.root, os.path.dirname(EVIDENCE_REL), "tdd-evidence.md")))
+
+    def test_a_failing_rule_refuses_the_baseline(self):
+        self.assert_refused("b3-unnamed", "B3 VO-002: no behaviour item names it in Verified by")
+
+    def test_a_missing_checklist_refuses_the_baseline(self):
+        self.assert_refused(
+            "checklist-missing", "CHECKLIST tests/behaviour-checklist.md: the file does not exist or cannot be read"
+        )
+
+    def test_the_tests_folder_is_not_created_where_it_was_absent(self):
+        self.fixture = "checklist-missing"
+        self.setUp()
+        folder = os.path.join(self.root, os.path.dirname(EVIDENCE_REL))
+        shutil.rmtree(folder, ignore_errors=True)
+        self.run_phase("baseline", "suite")
+        self.assertFalse(os.path.exists(folder))
+
+    def test_a_passing_checklist_lets_the_baseline_be_recorded(self):
+        self.fixture = "checklist-valid"
+        self.setUp()
+        result = self.run_phase("baseline", "suite")
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual([row["Phase"] for row in records(self.root)], ["baseline"])
+
+    def test_an_older_feature_records_its_baseline_where_its_evidence_already_is(self):
+        root = self.repo("valid-minimal")
+        top = ["specs", "001-demo", "tdd-evidence.md"]
+        before = len(table_rows(read(root, *top), "## Test execution records"))
+        result = self.check(["run", "--phase", "baseline", "--command", "suite"], root)
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(len(table_rows(read(root, *top), "## Test execution records")), before + 1)
+        self.assertFalse(os.path.exists(os.path.join(root, "specs", "001-demo", "tests")))
+
+
+class RedRefusedForAnUnlinkedObligationTests(RepoCase):
+    """A Red run for an obligation no behaviour item names is refused (contracts section 4)."""
+
+    def setUp(self):
+        self.root = self.repo("red-unlinked-obligation")
+        write(self.root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
+
+    def red(self, task, vo):
+        return self.check(
+            ["run", "--phase", "red", "--command", "unit", "--select", "assert", "--task", task, "--vo", vo,
+             "--tests", "tests/test_cart.py", "--expect", "AssertionError: expected 0"],
+            self.root,
+        )  # fmt: skip
+
+    def test_an_obligation_named_by_no_item_is_refused_and_nothing_is_recorded(self):
+        before = snapshot(self.root)
+        result = self.red("T016", "VO-003")
+        self.assertEqual(result.code, 2, result)
+        self.assertEqual(result.out, "")
+        self.assertIn("VO-003", result.err)
+        self.assertIn("no behaviour item names it", result.err)
+        self.assertIn("add it to an existing or new item first", result.err)
+        self.assertEqual(snapshot(self.root), before)
+
+    def test_an_obligation_named_by_an_item_is_recorded_as_before(self):
+        result = self.red("T011", "VO-001")
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("recorded #2: red unit: fail, valid", result.out)
+
+    def test_other_phases_are_not_refused_on_this_ground(self):
+        result = self.check(
+            ["run", "--phase", "green", "--command", "unit", "--select", "pass", "--task", "T017", "--vo", "VO-003"],
+            self.root,
+        )
+        self.assertNotIn("no behaviour item names it", result.err)
+
+    def test_an_older_feature_is_not_asked_for_items(self):
+        root = self.repo("valid-minimal")
+        write(root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
+        result = self.check(
+            ["run", "--phase", "red", "--command", "unit", "--select", "assert", "--task", "T013", "--vo", "VO-002",
+             "--tests", "tests/test_cart.py", "--expect", "AssertionError: expected 0"],
+            root,
+        )  # fmt: skip
+        self.assertNotIn("no behaviour item", result.err)
+
+
+class NoToolingRunTests(RepoCase):
+    """A run is refused when the plan records no test tooling (research D2; FR-004)."""
+
+    REFUSAL = "command '{command}' is not declared in the plan: the plan records no test tooling"
+
+    def assert_refused(self, root, command, *args):
+        before = snapshot(root)
+        result = self.check(["run"] + list(args), root)
+        self.assertEqual(result.code, 2, result)
+        self.assertIn(self.REFUSAL.format(command=command), result.err)
+        self.assertIn("nothing was recorded", result.err)
+        self.assertEqual(snapshot(root), before)
+
+    def test_a_baseline_run_is_refused_and_records_nothing(self):
+        root = self.repo("no-tooling-valid")
+        self.assert_refused(root, "suite", "--phase", "baseline", "--command", "suite")
+
+    def test_a_red_run_is_refused_and_records_nothing(self):
+        root = self.repo("no-tooling-valid")
+        write(root, ["tests", "test_cart.py"], "assert total([]) == 0\n")
+        self.assert_refused(
+            root, "unit", "--phase", "red", "--command", "unit", "--select", "assert", "--task", "T011",
+            "--vo", "VO-001", "--tests", "tests/test_cart.py", "--expect", "AssertionError",
+        )  # fmt: skip
+
+    def test_the_refusal_of_a_plan_with_commands_is_unchanged(self):
+        root = self.repo("valid-minimal")
+        result = self.check(["run", "--phase", "baseline", "--command", "adhoc"], root)
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("command 'adhoc' is not declared in the plan; nothing was recorded", result.err)
+        self.assertNotIn("test tooling", result.err)
 
 
 if __name__ == "__main__":

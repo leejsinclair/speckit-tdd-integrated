@@ -22,6 +22,8 @@ and after the change.
       `green` run) and after it (a `refactor` run), with the same command and selector.
 - [ ] Where existing coverage was too thin to show behaviour was preserved, a test was
       added first.
+- [ ] The behaviour the change preserves is still stated by a behaviour item whose
+      obligation is verified through the exception, and `status` shows that item.
 - [ ] If the trade-off was consequential, or the kind was `legacy`, `exploratory` or
       `other`, or the alternative was `none`, the developer was asked and an approver is
       recorded. Otherwise no approval was requested.
